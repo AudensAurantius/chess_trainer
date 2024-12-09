@@ -1,0 +1,220 @@
+- description: Lookup puzzles generated from your games, or from another player's
+    games.
+  name: playerGames
+  summary: Player games
+- description: A bit of everything. You don't know what to expect, so you remain ready
+    for anything! Just like in real games.
+  name: mix
+  summary: Healthy mix
+- description: The opponent is limited in the moves they can make, and all moves worsen
+    their position.
+  name: zugzwang
+  summary: Zugzwang
+- description: A piece attacks or defends a square, through an enemy piece.
+  name: xRayAttack
+  summary: X-Ray attack
+- description: Four moves or more to win.
+  name: veryLong
+  summary: Very long puzzle
+- description: Promotion to a knight, bishop, or rook.
+  name: underPromotion
+  summary: Underpromotion
+- description: A piece is unable to escape capture as it has limited moves.
+  name: trappedPiece
+  summary: Trapped piece
+- description: Puzzles from games played by the best players in the world.
+  name: superGM
+  summary: Super GM games
+- description: A checkmate delivered by a knight in which the mated king is unable
+    to move because it is surrounded (or smothered) by its own pieces.
+  name: smotheredMate
+  summary: Smothered mate
+- description: A motif involving a high value piece being attacked, moving out the
+    way, and allowing a lower value piece behind it to be captured or attacked, the
+    inverse of a pin.
+  name: skewer
+  summary: Skewer
+- description: Two moves to win.
+  name: short
+  summary: Short puzzle
+- description: A tactic involving giving up material in the short-term, to gain an
+    advantage again after a forced sequence of moves.
+  name: sacrifice
+  summary: Sacrifice
+- description: An endgame with only rooks and pawns.
+  name: rookEndgame
+  summary: Rook endgame
+- description: A move that does neither make a check or capture, nor an immediate
+    threat to capture, but does prepare a more hidden unavoidable threat for a later
+    move.
+  name: quietMove
+  summary: Quiet move
+- description: An attack of the opponent's king, after they castled on the queen side.
+  name: queensideAttack
+  summary: Queenside attack
+- description: An endgame with only queens, rooks and pawns.
+  name: queenRookEndgame
+  summary: Queen and Rook
+- description: An endgame with only queens and pawns.
+  name: queenEndgame
+  summary: Queen endgame
+- description: Promote one of your pawn to a queen or minor piece.
+  name: promotion
+  summary: Promotion
+- description: A tactic involving pins, where a piece is unable to move without revealing
+    an attack on a higher value piece.
+  name: pin
+  summary: Pin
+- description: An endgame with only pawns.
+  name: pawnEndgame
+  summary: Pawn endgame
+- description: A tactic during the first phase of the game.
+  name: opening
+  summary: Opening
+- description: A puzzle that is only one move long.
+  name: oneMove
+  summary: One-move puzzle
+- description: A tactic during the second phase of the game.
+  name: middlegame
+  summary: Middlegame
+- description: Figure out a long mating sequence.
+  name: mateIn5
+  summary: Mate in 5 or more
+- description: Deliver checkmate in four moves.
+  name: mateIn4
+  summary: Mate in 4
+- description: Deliver checkmate in three moves.
+  name: mateIn3
+  summary: Mate in 3
+- description: Deliver checkmate in two moves.
+  name: mateIn2
+  summary: Mate in 2
+- description: Deliver checkmate in one move.
+  name: mateIn1
+  summary: Mate in 1
+- description: Win the game with style.
+  name: mate
+  summary: Checkmate
+- description: Puzzles from games between two titled players.
+  name: masterVsMaster
+  summary: Master vs Master games
+- description: Puzzles from games played by titled players.
+  name: master
+  summary: Master games
+- description: Three moves to win.
+  name: long
+  summary: Long puzzle
+- description: An endgame with only knights and pawns.
+  name: knightEndgame
+  summary: Knight endgame
+- description: Instead of playing the expected move, first interpose another move
+    posing an immediate threat that the opponent must answer. Also known as "Zwischenzug"
+    or "In between".
+  name: intermezzo
+  summary: Intermezzo
+- description: Moving a piece between two opponent pieces to leave one or both opponent
+    pieces undefended, such as a knight on a defended square between two rooks.
+  name: interference
+  summary: Interference
+- description: Checkmate with a rook, knight, and pawn along with one enemy pawn to
+    limit the enemy king's escape.
+  name: hookMate
+  summary: Hook mate
+- description: A tactic involving an opponent piece being undefended or insufficiently
+    defended and free to capture.
+  name: hangingPiece
+  summary: Hanging piece
+- description: A move where the moved piece attacks two opponent pieces at once.
+  name: fork
+  summary: Fork
+- description: A tactic involving a king with few defenders around it, often leading
+    to checkmate.
+  name: exposedKing
+  summary: Exposed king
+- description: A tactic involving the en passant rule, where a pawn can capture an
+    opponent pawn that has bypassed it using its initial two-square move.
+  name: enPassant
+- description: A tactic during the last phase of the game.
+  name: endgame
+  summary: Endgame
+- description: Checking with two pieces at once, as a result of a discovered attack
+    where both the moving piece and the unveiled piece attack the opponent's king.
+  name: doubleCheck
+  summary: Double check
+- description: Moving a piece (such as a knight), that previously blocked an attack
+    by a long range piece (such as a rook), out of the way of that piece.
+  name: discoveredAttack
+  summary: Discovered attack
+- description: A move that distracts an opponent piece from another duty that it performs,
+    such as guarding a key square. Sometimes also called "overloading".
+  name: deflection
+  summary: Deflection
+- description: A precise move or sequence of moves that is needed to avoid losing
+    material or another advantage.
+  name: defensiveMove
+  summary: Defensive move
+- description: A move, often with tempo, that clears a square, file or diagonal for
+    a follow-up tactical idea.
+  name: clearance
+  summary: Clearance
+- description: An attack of the opponent's king, after they castled on the king side.
+  name: kingsideAttack
+  summary: Kingside attack
+- description: "Come back from a losing position, and secure a draw or a balanced\
+    \ position. (eval \u2264 200cp)"
+  name: equality
+  summary: Equality
+- description: A queen delivers mate to an adjacent king, whose only two escape squares
+    are obstructed by friendly pieces.
+  name: dovetailMate
+  summary: Dovetail mate
+- description: Two attacking bishops on adjacent diagonals deliver mate to a king
+    obstructed by friendly pieces.
+  name: doubleBishopMate
+  summary: Double bishop mate
+- description: "Spot the opponent blunder to obtain a crushing advantage. (eval \u2265\
+    \ 600cp)"
+  name: crushing
+  summary: Crushing
+- description: Removing a piece that is critical to defence of another piece, allowing
+    the now undefended piece to be captured on a following move.
+  name: capturingDefender
+  summary: Capture the defender
+- description: Bring the king to safety, and deploy the rook for attack.
+  name: castling
+  summary: Castling
+- description: Two attacking bishops on criss-crossing diagonals deliver mate to a
+    king obstructed by friendly pieces.
+  name: bodenMate
+  summary: Boden's mate
+- description: An endgame with only bishops and pawns.
+  name: bishopEndgame
+  summary: Bishop endgame
+- description: Checkmate the king on the home rank, when it is trapped there by its
+    own pieces.
+  name: backRankMate
+  summary: Back rank mate
+- description: An exchange or sacrifice encouraging or forcing an opponent piece to
+    a square that allows a follow-up tactic.
+  name: attraction
+  summary: Attraction
+- description: An attack focusing on the f2 or f7 pawn, such as in the fried liver
+    opening.
+  name: attackingF2F7
+  summary: Attacking f2 or f7
+- description: A knight and a rook team up to trap the opposing king on a corner of
+    the board.
+  name: arabianMate
+  summary: Arabian mate
+- description: A knight and rook or queen team up to trap the opposing king between
+    the side of the board and a friendly piece.
+  name: anastasiaMate
+  summary: Anastasia's mate
+- description: "Seize your chance to get a decisive advantage. (200cp \u2264 eval\
+    \ \u2264 600cp)"
+  name: advantage
+  summary: Advantage
+- description: One of your pawns is deep into the opponent position, maybe threatening
+    to promote.
+  name: advancedPawn
+  summary: Advanced pawn
