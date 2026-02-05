@@ -14,9 +14,8 @@ pandas
 numpy
 
 # datastores
-sqlite3
 duckdb
 tinydb      # serverless document-oriented db (no ACID)
 unqlite     # embedded file-based NoSQL
-buzhug      # pure-Python DB engine (beta)
-CodernityDB # pure-Python NoSQL (archived)
+# buzhug      # pure-Python DB engine (beta)
+# CodernityDB # pure-Python NoSQL (archived)
