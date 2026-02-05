@@ -1,5 +1,5 @@
 from datetime import datetime
-from ..model import Model, dataclass, field, config, timestamp
+from ..model import Model, dataclass, timestamp
 
 
 @dataclass
@@ -37,23 +37,23 @@ class LichessPuzzle(Model):
     def __post_init__(self):
         if self._properties is not None:
             game_details, puzzle_details = (
-                self._properties.pop("game"),
-                self._properties.pop("puzzle"),
+                self._properties.pop("game", {}),
+                self._properties.pop("puzzle", {}),
             )
-            self.game_id = game_details["id"]
-            self.game_to_puzzle = game_details["pgn"]
-            self.id = puzzle_details["id"]
-            self.rating = puzzle_details["rating"]
-            self.plays = puzzle_details["plays"]
-            self.solution = puzzle_details["solution"]
-            self.themes = puzzle_details["themes"]
-            self.initial_ply = puzzle_details["initialPly"]
+            self.game_id = game_details.get("id")
+            self.game_to_puzzle = game_details.get("pgn")
+            self.id = puzzle_details.get("id")
+            self.rating = puzzle_details.get("rating")
+            self.plays = puzzle_details.get("plays")
+            self.solution = puzzle_details.get("solution")
+            self.themes = puzzle_details.get("themes")
+            self.initial_ply = puzzle_details.get("initialPly")
 
 
 @dataclass
 class LichessTimeControl(Model):
     initial: int
-    totalTime: int
+    total_time: int
     increment: int | None = None
 
 

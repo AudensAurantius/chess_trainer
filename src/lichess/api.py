@@ -1,9 +1,12 @@
+import json
 import requests
+from rich.progress import Progress
+from pathlib import Path
 from random import choices
 from typing import Iterable
 from .constants import LICHESS_TOKEN, LICHESS_API, get_difficulty, get_valid_theme
 from .. import get_logger
-from ..http import _handle_response, _get_headers
+from ..http import _handle_response, _get_headers, JsonObject, JsonGenerator
 
 
 logger = get_logger(__name__)
@@ -14,29 +17,28 @@ class LichessError(Exception):
 
 
 def get_lichess(
-    endpoint,
-    query_params={},
+    endpoint: str,
+    query_params: dict[str, str] = {},
     auth: bool = False,
     accept: str | None = None,
-):
+    stream: bool = False,
+) -> JsonObject | JsonGenerator | requests.Response:
     url = f"{LICHESS_API}/{endpoint}"
     headers = _get_headers(oauth_token=auth and LICHESS_TOKEN, accept=accept)
-    response = requests.get(url, params=query_params, headers=headers)
-    response.raise_for_status()
+    response = requests.get(url, params=query_params, headers=headers, stream=stream)
     return _handle_response(response, url)
 
 
 def post_lichess(
-    endpoint,
+    endpoint: str,
     body: str = "",
-    query_params={},
+    query_params: dict[str, str] = {},
     auth: bool = False,
     accept: str | None = "application/x-ndjson",
-):
+) -> JsonObject | JsonGenerator | requests.Response:
     url = f"{LICHESS_API}/{endpoint}"
     headers = _get_headers(oauth_token=auth and LICHESS_TOKEN, accept=accept)
     response = requests.post(url, params=query_params, headers=headers, data=body)
-    response.raise_for_status()
     return _handle_response(response, url)
 
 
@@ -126,15 +128,36 @@ def random_puzzles(
         yield get_lichess("puzzle/next", query_params=params, auth=filter_seen)
 
 
-def get_puzzle_history(limit: int = 100): ...
-
-
 def get_games(*game_ids: str):
     logger.info("Getting game IDs %s", game_ids)
-    return post_lichess(
+    yield from post_lichess(
         "games/export/_ids", body=",".join(game_ids), query_params={"pgnInJson": True}
     )
 
 
 def get_game(game_id: str):
     return list(get_games(game_id))[0]
+
+
+def get_puzzle_history(limit: int = 100):
+    logger.info("Getting puzzle history, limit %s puzzles", limit)
+    yield from get_lichess(
+        "puzzle/activity", query_params={"max": limit}, stream=True, auth=True
+    )
+
+
+def write_puzzle_history(filename: str | Path, limit: int = 100):
+    logger.info("Writing puzzle history to file %s: limit %s puzzles", filename, limit)
+    response = requests.get(
+        f"{LICHESS_API}/puzzle/activity",
+        params={"max": limit},
+        headers=_get_headers(oauth_token=LICHESS_TOKEN),
+        stream=True,
+    )
+    response.raise_for_status()
+    with Progress() as progress:
+        download_task = progress.add_task("Downloading puzzle history...", total=limit)
+        with Path(filename).open("w") as stream:
+            for line in response.iter_lines():
+                stream.write(f"{line.decode()}\n")
+                progress.update(download_task, advance=1)

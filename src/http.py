@@ -1,5 +1,5 @@
 from . import get_logger
-from typing import Mapping, Iterable
+from typing import Mapping, Iterable, Generator, TypeAlias
 import json
 from requests import Response
 from ndjson import Decoder
@@ -7,20 +7,26 @@ from ndjson import Decoder
 logger = get_logger(__name__)
 
 
-def _handle_response(response, url) -> Mapping | Iterable | Response:
-    if not response.ok:
-        logger.warning(
-            "HTTP call to URL %s returned status code %s",
-            url,
-            response.status_code,
-        )
-        return response
+JsonObject: TypeAlias = dict | list | int | str
+JsonGenerator: TypeAlias = Generator[JsonObject, None, None]
+
+
+def _load_ndjson(response: Response) -> JsonGenerator:
+    yield from map(json.loads, response.iter_lines())
+
+
+def _handle_response(
+    response: Response,
+    url: str,
+) -> JsonObject | JsonGenerator | Response:
+    response.raise_for_status()
     content_type = response.headers.get("Content-Type")
     logger.info("HTTP call to URL %s returned successfully", url)
+    logger.debug("Handling HTTP response with content-type %s", content_type)
     if content_type == "application/json":
         return json.loads(response.content)
     elif content_type == "application/x-ndjson":
-        return response.json(cls=Decoder)
+        return _load_ndjson(response)
     else:
         logger.warning("Unrecognized content type %r in HTTP response", content_type)
         return response

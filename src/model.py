@@ -18,7 +18,7 @@ def timestamp(field_name: str | None = None):
     return field(
         metadata=config(
             decoder=lambda x: datetime.fromtimestamp(x / 1000),
-            encoder=lambda x: 1000 * x.timestamp,
+            encoder=lambda x: 1000 * x.timestamp(),
             field_name=field_name,
         )
     )
