@@ -10,6 +10,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from .. import configure_logging
+from ..config import AppConfig, load_config
 from ..exercises import Exercise, ExerciseType
 from ..importers import LichessPuzzleImporter
 from ..scheduling.fsrs import Rating
@@ -24,13 +26,29 @@ app = typer.Typer(
 )
 console = Console()
 
-# Default database location
-DEFAULT_DB = Path.home() / ".chess-trainer" / "trainer.db"
+# Loaded once on startup via the callback
+_app_config: AppConfig | None = None
+
+
+def _get_config() -> AppConfig:
+    """Return the loaded app config, falling back to defaults."""
+    return _app_config or load_config()
+
+
+@app.callback()
+def _main_callback(
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to config TOML"),
+) -> None:
+    """Global options applied before any subcommand."""
+    global _app_config  # noqa: PLW0603
+    _app_config = load_config(config)
+    configure_logging(_app_config.logging.level)
 
 
 def get_repo(db_path: Path | None = None) -> Repository:
     """Get repository with default or specified path."""
-    return Repository(db_path or DEFAULT_DB)
+    cfg = _get_config()
+    return Repository(db_path or Path(cfg.database.path))
 
 
 @app.command()
@@ -245,13 +263,15 @@ def train(
                 console.print(f"[red]Unknown exercise type: {exercise_type}[/red]")
                 raise typer.Exit(1)
 
-        config = SessionConfig(
+        cfg = _get_config()
+        session_config = SessionConfig(
             max_new_cards=new_cards,
             max_reviews=reviews,
             exercise_types=type_filter,
+            interleave_new=cfg.training.interleave_new,
         )
 
-        session = TrainingSession(repo, config)
+        session = TrainingSession(repo, session_config)
         session.start()
 
         if session.remaining == 0:
@@ -421,6 +441,47 @@ def init_cards(
                 created += 1
 
         console.print(f"[green]\u2713[/green] Created {created} new review cards")
+
+
+config_app = typer.Typer(help="Configuration management")
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("init")
+def config_init() -> None:
+    """Generate a default config file at ~/.chess-trainer/config.toml."""
+    from ..config import DEFAULT_CONFIG_PATH, generate_default_config
+
+    if DEFAULT_CONFIG_PATH.exists():
+        console.print(f"[yellow]Config already exists:[/yellow] {DEFAULT_CONFIG_PATH}")
+        overwrite = typer.confirm("Overwrite?", default=False)
+        if not overwrite:
+            raise typer.Abort()
+
+    DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEFAULT_CONFIG_PATH.write_text(generate_default_config())
+    console.print(f"[green]\u2713[/green] Config written to {DEFAULT_CONFIG_PATH}")
+
+
+@config_app.command("show")
+def config_show() -> None:
+    """Show the current effective configuration."""
+    cfg = _get_config()
+    console.print(
+        Panel(
+            f"[bold]database.path[/bold] = {cfg.database.path}\n"
+            f"[bold]lichess.api_url[/bold] = {cfg.lichess.api_url}\n"
+            f"[bold]lichess.token[/bold] = {'***' if cfg.lichess.token else '(not set)'}\n"
+            f"[bold]scheduler.request_retention[/bold] = {cfg.scheduler.request_retention}\n"
+            f"[bold]training.max_new_cards[/bold] = {cfg.training.max_new_cards}\n"
+            f"[bold]training.max_reviews[/bold] = {cfg.training.max_reviews}\n"
+            f"[bold]training.interleave_new[/bold] = {cfg.training.interleave_new}\n"
+            f"[bold]logging.level[/bold] = {cfg.logging.level}\n"
+            f"[bold]web.host[/bold] = {cfg.web.host}\n"
+            f"[bold]web.port[/bold] = {cfg.web.port}",
+            title="Effective Configuration",
+        )
+    )
 
 
 def main():
