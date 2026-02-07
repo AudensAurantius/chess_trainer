@@ -1,5 +1,4 @@
-"""
-Chess training exercise domain model.
+"""Chess training exercise domain model.
 
 This module defines the core abstractions for all exercise types:
 - Exercise: Base class for all training exercises
@@ -8,10 +7,10 @@ This module defines the core abstractions for all exercise types:
 """
 
 from .base import Exercise, ExerciseResult, ExerciseType
-from .tactics import TacticExercise
-from .openings import OpeningExercise
 from .endgames import EndgameExercise
+from .openings import OpeningExercise
 from .positional import PositionalExercise
+from .tactics import TacticExercise
 
 __all__ = [
     "Exercise",

@@ -1,5 +1,4 @@
-"""
-FSRS (Free Spaced Repetition Scheduler) implementation.
+"""FSRS (Free Spaced Repetition Scheduler) implementation.
 
 FSRS is based on the DSR (Difficulty, Stability, Retrievability) memory model
 and provides more accurate scheduling than SM-2 by modeling memory decay
@@ -13,24 +12,23 @@ References:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import IntEnum
-from math import exp, log, pow
+from math import exp, pow
 
-from .card import ReviewCard, CardState
+from .card import CardState, ReviewCard
 
 
 class Rating(IntEnum):
     """User's self-assessment of recall difficulty."""
 
     AGAIN = 1  # Complete failure to recall
-    HARD = 2   # Recalled with significant difficulty
-    GOOD = 3   # Recalled with some effort
-    EASY = 4   # Recalled effortlessly
+    HARD = 2  # Recalled with significant difficulty
+    GOOD = 3  # Recalled with some effort
+    EASY = 4  # Recalled effortlessly
 
 
 @dataclass
 class FSRSParameters:
-    """
-    FSRS-4.5 algorithm parameters.
+    """FSRS-4.5 algorithm parameters.
 
     These defaults are optimized from large-scale Anki data analysis.
     Individual users can have personalized parameters derived from
@@ -50,8 +48,8 @@ class FSRSParameters:
     w7: float = 0.01  # Difficulty update on forget
 
     # Stability parameters
-    w8: float = 1.49   # Stability increase base
-    w9: float = 0.14   # Stability increase difficulty factor
+    w8: float = 1.49  # Stability increase base
+    w9: float = 0.14  # Stability increase difficulty factor
     w10: float = 0.94  # Stability increase stability factor
     w11: float = 2.18  # Stability increase retrievability factor
     w12: float = 0.05  # Stability decrease factor (hard penalty)
@@ -93,19 +91,18 @@ class SchedulingResult:
 
 
 class FSRSScheduler:
-    """
-    FSRS scheduler that computes next review dates based on memory model.
+    """FSRS scheduler that computes next review dates based on memory model.
 
     The scheduler maintains the DSR (Difficulty, Stability, Retrievability)
     parameters for each card and uses them to determine optimal review timing.
     """
 
     def __init__(self, params: FSRSParameters | None = None):
+        """Initialize the FSRS scheduler with optional custom parameters."""
         self.p = params or FSRSParameters()
 
     def schedule(self, card: ReviewCard, now: datetime | None = None) -> SchedulingResult:
-        """
-        Compute scheduling options for all possible ratings.
+        """Compute scheduling options for all possible ratings.
 
         Args:
             card: The card to schedule
@@ -294,8 +291,7 @@ class FSRSScheduler:
         return SchedulingResult(card=card, again=again, hard=hard, good=good, easy=easy)
 
     def _retrievability(self, stability: float, elapsed_days: float) -> float:
-        """
-        Calculate probability of recall using power forgetting curve.
+        """Calculate probability of recall using power forgetting curve.
 
         R(t) = (1 + t/S)^(-1)
 
@@ -317,8 +313,7 @@ class FSRSScheduler:
         return [self.p.w0, self.p.w1, self.p.w2, self.p.w3][rating.value - 1]
 
     def _next_difficulty(self, d: float, rating: Rating) -> float:
-        """
-        Update difficulty after a review.
+        """Update difficulty after a review.
 
         D'(D,G) = w6 * D0(G) + (1 - w6) * D
         """
@@ -326,11 +321,8 @@ class FSRSScheduler:
         d_new = self.p.w6 * d0 + (1 - self.p.w6) * d
         return max(0.1, min(0.9, d_new))
 
-    def _next_recall_stability(
-        self, d: float, s: float, r: float, rating: Rating
-    ) -> float:
-        """
-        Calculate new stability after successful recall.
+    def _next_recall_stability(self, d: float, s: float, r: float, rating: Rating) -> float:
+        """Calculate new stability after successful recall.
 
         S'(D,S,R,G) = S * (e^w8 * (11-D) * S^(-w9) * (e^(w10*(1-R)) - 1) * HardPenalty * EasyBonus + 1)
         """
@@ -350,8 +342,7 @@ class FSRSScheduler:
         return min(s_new, self.p.maximum_interval)
 
     def _next_forget_stability(self, d: float, s: float, r: float) -> float:
-        """
-        Calculate new stability after forgetting (lapse).
+        """Calculate new stability after forgetting (lapse).
 
         S'(D,S,R) = w11 * D^(-w12) * ((S+1)^w13 - 1) * e^(w14*(1-R))
         """
@@ -365,8 +356,7 @@ class FSRSScheduler:
         return max(0.1, min(s_new, s))  # New stability after lapse is at most old stability
 
     def _next_interval(self, stability: float) -> float:
-        """
-        Calculate review interval from stability to achieve target retention.
+        """Calculate review interval from stability to achieve target retention.
 
         I(S,R) = S * (R^(1/-1) - 1)
 

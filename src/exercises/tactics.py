@@ -1,5 +1,4 @@
-"""
-Tactical exercise implementation.
+"""Tactical exercise implementation.
 
 Tactics are positions where there's a forcing sequence that wins material
 or delivers checkmate. The user must find the correct move(s).
@@ -16,8 +15,7 @@ from .base import Exercise, ExerciseResult, ExerciseType
 
 @dataclass
 class TacticExercise(Exercise):
-    """
-    A tactical puzzle exercise.
+    """A tactical puzzle exercise.
 
     The user must find the winning move or sequence of moves.
     """
@@ -28,9 +26,11 @@ class TacticExercise(Exercise):
     game_id: str | None = None  # Source game if from a real game
 
     def get_challenge(self) -> str:
+        """Return the challenge text for this tactic."""
         return f"{self.side_to_move} to play. Find the best move."
 
     def get_solution(self) -> list[chess.Move]:
+        """Convert UCI solution strings to chess.Move objects."""
         board = self.position
         moves = []
         for uci in self.solution:
@@ -40,6 +40,7 @@ class TacticExercise(Exercise):
         return moves
 
     def evaluate(self, moves: list[chess.Move], time_taken_ms: int) -> ExerciseResult:
+        """Evaluate user's moves against the tactical solution."""
         solution_moves = self.get_solution()
 
         if not moves:
@@ -73,7 +74,9 @@ class TacticExercise(Exercise):
             if self.themes:
                 feedback += f" Themes: {', '.join(self.themes)}"
         elif correct_count > 0:
-            feedback = f"Partially correct. You found {correct_count} of {len(user_solution_moves)} moves."
+            feedback = (
+                f"Partially correct. You found {correct_count} of {len(user_solution_moves)} moves."
+            )
         else:
             feedback = f"Incorrect. The solution was {self._format_solution()}."
 
@@ -97,6 +100,7 @@ class TacticExercise(Exercise):
         return " ".join(san_moves)
 
     def get_explanation(self) -> str:
+        """Return solution and themes as explanation text."""
         explanation = f"Solution: {self._format_solution()}"
         if self.themes:
             explanation += f"\n\nThemes: {', '.join(self.themes)}"
@@ -111,6 +115,7 @@ class TacticExercise(Exercise):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TacticExercise":
+        """Deserialize a TacticExercise from a dictionary."""
         return cls(
             id=data["id"],
             fen=data["fen"],

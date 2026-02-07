@@ -1,22 +1,19 @@
-"""
-Exercise storage operations.
-"""
+"""Exercise storage operations."""
 
 import json
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Iterator
 
 import duckdb
 
 from ..exercises import (
+    EndgameExercise,
     Exercise,
     ExerciseType,
-    TacticExercise,
     OpeningExercise,
-    EndgameExercise,
     PositionalExercise,
+    TacticExercise,
 )
-
 
 # Mapping from type enum to class
 EXERCISE_CLASSES = {
@@ -31,6 +28,7 @@ class ExerciseStore:
     """Store for exercise CRUD operations."""
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
+        """Initialize exercise store with database connection."""
         self.conn = conn
 
     def add(self, exercise: Exercise) -> None:
@@ -60,8 +58,7 @@ class ExerciseStore:
         )
 
     def add_many(self, exercises: list[Exercise]) -> int:
-        """
-        Add multiple exercises efficiently.
+        """Add multiple exercises efficiently.
 
         Returns number of exercises added (skips duplicates).
         """
@@ -91,9 +88,7 @@ class ExerciseStore:
 
         return self._row_to_exercise(result)
 
-    def get_by_type(
-        self, exercise_type: ExerciseType, limit: int | None = None
-    ) -> list[Exercise]:
+    def get_by_type(self, exercise_type: ExerciseType, limit: int | None = None) -> list[Exercise]:
         """Get exercises of a specific type."""
         query = """
             SELECT id, exercise_type, fen, tags, source, source_url,
@@ -108,8 +103,7 @@ class ExerciseStore:
         return [self._row_to_exercise(row) for row in results]
 
     def get_by_tags(self, tags: list[str], match_all: bool = False) -> list[Exercise]:
-        """
-        Get exercises matching tags.
+        """Get exercises matching tags.
 
         Args:
             tags: Tags to match
@@ -117,14 +111,10 @@ class ExerciseStore:
         """
         if match_all:
             # Exercise must contain all specified tags
-            conditions = " AND ".join(
-                f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags
-            )
+            conditions = " AND ".join(f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags)
         else:
             # Exercise must contain at least one tag
-            conditions = " OR ".join(
-                f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags
-            )
+            conditions = " OR ".join(f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags)
 
         results = self.conn.execute(
             f"""
@@ -156,9 +146,7 @@ class ExerciseStore:
             params.append(exercise_type.name)
 
         if tags:
-            tag_conditions = " OR ".join(
-                f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags
-            )
+            tag_conditions = " OR ".join(f"list_contains(tags::VARCHAR[], '{tag}')" for tag in tags)
             conditions.append(f"({tag_conditions})")
 
         if min_difficulty is not None:
@@ -257,7 +245,9 @@ class ExerciseStore:
             "source": source or "",
             "source_url": source_url,
             "difficulty": difficulty,
-            "created_at": created_at.isoformat() if isinstance(created_at, datetime) else created_at,
+            "created_at": created_at.isoformat()
+            if isinstance(created_at, datetime)
+            else created_at,
             "metadata": metadata or {},
             **(type_data or {}),
         }

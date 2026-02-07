@@ -1,5 +1,4 @@
-"""
-Endgame exercise implementation.
+"""Endgame exercise implementation.
 
 Endgame exercises test knowledge of theoretical endgame positions and
 techniques. Unlike tactics, the emphasis is on demonstrating understanding
@@ -17,8 +16,7 @@ from .base import Exercise, ExerciseResult, ExerciseType
 
 @dataclass
 class EndgameExercise(Exercise):
-    """
-    A theoretical endgame exercise.
+    """A theoretical endgame exercise.
 
     The user must demonstrate the winning (or drawing) technique.
     Evaluation can use tablebases for objective assessment.
@@ -34,6 +32,7 @@ class EndgameExercise(Exercise):
     target_outcome: str = "win"  # "win", "draw", "hold"
 
     def get_challenge(self) -> str:
+        """Return the challenge text for this endgame exercise."""
         if self.technique_name:
             return f"{self.side_to_move} to play. Demonstrate the {self.technique_name}."
         elif self.target_outcome == "win":
@@ -44,9 +43,11 @@ class EndgameExercise(Exercise):
             return f"{self.side_to_move} to play. Find the best continuation."
 
     def get_solution(self) -> list[chess.Move]:
+        """Return acceptable first moves for this endgame."""
         return [chess.Move.from_uci(uci) for uci in self.acceptable_first_moves]
 
     def evaluate(self, moves: list[chess.Move], time_taken_ms: int) -> ExerciseResult:
+        """Evaluate user's moves against acceptable endgame continuations."""
         acceptable = self.get_solution()
 
         if not moves:
@@ -92,13 +93,14 @@ class EndgameExercise(Exercise):
         )
 
     def get_explanation(self) -> str:
+        """Return the technique and key concepts as explanation."""
         parts = []
 
         if self.technique_name:
             parts.append(f"Technique: {self.technique_name}")
 
         if self.key_ideas:
-            parts.append(f"Key ideas:\n" + "\n".join(f"  - {idea}" for idea in self.key_ideas))
+            parts.append("Key ideas:\n" + "\n".join(f"  - {idea}" for idea in self.key_ideas))
 
         if self.key_squares:
             parts.append(f"Key squares: {', '.join(self.key_squares)}")
@@ -126,6 +128,7 @@ class EndgameExercise(Exercise):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EndgameExercise":
+        """Deserialize an EndgameExercise from a dictionary."""
         return cls(
             id=data["id"],
             fen=data["fen"],

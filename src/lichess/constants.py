@@ -1,7 +1,11 @@
-import requests
-import yaml
+"""Lichess API configuration and puzzle theme management."""
+
 from os import getenv
 from xml.etree import ElementTree as ETree
+
+import requests
+import yaml
+
 from .. import ASSETS, get_logger
 from .models import Theme
 
@@ -25,10 +29,15 @@ PUZZLE_THEMES: dict[str, Theme] = {}
 
 
 def get_difficulty(difficulty: str | int | None) -> str | None:
-    if (
-        isinstance(difficulty, str)
-        and (name := difficulty.lower().strip()) in PUZZLE_DIFFICULTIES
-    ):
+    """Validate and normalize a puzzle difficulty value.
+
+    Args:
+        difficulty: Difficulty name (e.g. ``"normal"``) or index (0–4).
+
+    Returns:
+        Normalized difficulty string, or ``None`` if invalid.
+    """
+    if isinstance(difficulty, str) and (name := difficulty.lower().strip()) in PUZZLE_DIFFICULTIES:
         return name
     elif isinstance(difficulty, int) and 0 <= difficulty < len(PUZZLE_DIFFICULTIES):
         return PUZZLE_DIFFICULTIES[difficulty]
@@ -41,9 +50,21 @@ def get_puzzle_themes(
     name_contains: str | None = None,
     desc_contains: str | None = None,
 ) -> list[Theme]:
-    """Get a list of valid Lichess puzzle themes."""
+    """Get a list of valid Lichess puzzle themes.
 
-    def valid(theme):
+    Fetches from the Lichess GitHub repo on first call (or when ``refresh=True``)
+    and caches to a local YAML file.
+
+    Args:
+        refresh: Force re-download from GitHub.
+        name_contains: Filter themes whose name contains this substring.
+        desc_contains: Filter themes whose description contains this substring.
+
+    Returns:
+        List of matching ``Theme`` objects.
+    """
+
+    def valid(theme: Theme) -> bool:
         result = True
         if name_contains is not None:
             result = result and name_contains.lower() in theme.name.lower()
@@ -61,7 +82,7 @@ def get_puzzle_themes(
         response = requests.get(PUZZLE_THEMES_URL)
         response.raise_for_status()
         xml = ETree.fromstring(response.content.decode())
-        themes = {}
+        themes: dict[str, dict] = {}
         for node in xml.findall("string"):
             name = node.attrib.get("name")
             if name is not None and name.endswith("Description"):
@@ -82,18 +103,21 @@ def get_puzzle_themes(
         logger.info("Reading puzzle themes from file %s", PUZZLE_THEMES_FILE)
         with PUZZLE_THEMES_FILE.open() as file:
             PUZZLE_THEMES = {
-                theme.name: theme
-                for theme in map(Theme.from_dict, yaml.safe_load(file))
+                theme.name: theme for theme in map(Theme.from_dict, yaml.safe_load(file))
             }
     return list(filter(valid, PUZZLE_THEMES.values()))
 
 
 def get_valid_theme(theme: str) -> str | None:
+    """Look up a theme name case-insensitively.
+
+    Args:
+        theme: Theme name to validate.
+
+    Returns:
+        Canonical theme name, or ``None`` if not found.
+    """
     try:
-        return next(
-            name
-            for name in get_puzzle_themes()
-            if name.lower() == theme.lower().strip()
-        )
+        return next(t.name for t in get_puzzle_themes() if t.name.lower() == theme.lower().strip())
     except StopIteration:
         return None

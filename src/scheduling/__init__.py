@@ -1,12 +1,11 @@
-"""
-Spaced repetition scheduling module.
+"""Spaced repetition scheduling module.
 
 This module implements the FSRS (Free Spaced Repetition Scheduler) algorithm
 for optimal review scheduling based on memory research.
 """
 
-from .card import ReviewCard, CardState
-from .fsrs import FSRSScheduler, FSRSParameters, SchedulingResult
+from .card import CardState, ReviewCard
+from .fsrs import FSRSParameters, FSRSScheduler, SchedulingResult
 
 __all__ = [
     "ReviewCard",

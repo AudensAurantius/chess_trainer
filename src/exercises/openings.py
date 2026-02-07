@@ -1,5 +1,4 @@
-"""
-Opening exercise implementation.
+"""Opening exercise implementation.
 
 Opening exercises test knowledge of opening theory by presenting positions
 from opening lines and asking the user to find the main line move.
@@ -16,8 +15,7 @@ from .base import Exercise, ExerciseResult, ExerciseType
 
 @dataclass
 class OpeningExercise(Exercise):
-    """
-    An opening theory exercise.
+    """An opening theory exercise.
 
     The user must find the main line move in an opening position.
     Alternative acceptable moves can be specified for partial credit.
@@ -32,17 +30,20 @@ class OpeningExercise(Exercise):
     alternative_moves: list[str] = field(default_factory=list)  # Also acceptable
 
     def get_challenge(self) -> str:
+        """Return the challenge text for this opening position."""
         name = self.opening_name
         if self.variation_name:
             name += f", {self.variation_name}"
         return f"{self.side_to_move} to play. What is the main line in the {name}?"
 
     def get_solution(self) -> list[chess.Move]:
+        """Return the next expected move in the opening line."""
         if self.current_move_index < len(self.line):
             return [chess.Move.from_uci(self.line[self.current_move_index])]
         return []
 
     def evaluate(self, moves: list[chess.Move], time_taken_ms: int) -> ExerciseResult:
+        """Evaluate user's move against the opening theory."""
         solution = self.get_solution()
 
         if not moves:
@@ -97,6 +98,7 @@ class OpeningExercise(Exercise):
         )
 
     def get_explanation(self) -> str:
+        """Return the opening line and alternatives as explanation."""
         if not self.line:
             return "No line available."
 
@@ -136,6 +138,7 @@ class OpeningExercise(Exercise):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "OpeningExercise":
+        """Deserialize an OpeningExercise from a dictionary."""
         return cls(
             id=data["id"],
             fen=data["fen"],

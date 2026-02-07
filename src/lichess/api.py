@@ -1,53 +1,92 @@
-import json
-import requests
-from rich.progress import Progress
+"""Lichess API client for puzzles, games, and user history."""
+
+from collections.abc import Iterator
 from pathlib import Path
 from random import choices
-from typing import Iterable
-from .constants import LICHESS_TOKEN, LICHESS_API, get_difficulty, get_valid_theme
-from .. import get_logger
-from ..http import _handle_response, _get_headers, JsonObject, JsonGenerator
 
+import requests
+from rich.progress import Progress
+
+from .. import get_logger
+from ..http import JsonGenerator, JsonObject, _get_headers, _handle_response
+from .constants import LICHESS_API, LICHESS_TOKEN, get_difficulty, get_valid_theme
 
 logger = get_logger(__name__)
 
 
 class LichessError(Exception):
-    pass
+    """Raised when a Lichess API call fails or receives invalid parameters."""
 
 
 def get_lichess(
     endpoint: str,
-    query_params: dict[str, str] = {},
+    query_params: dict[str, str] | None = None,
     auth: bool = False,
     accept: str | None = None,
     stream: bool = False,
 ) -> JsonObject | JsonGenerator | requests.Response:
+    """Send a GET request to the Lichess API.
+
+    Args:
+        endpoint: API endpoint path (appended to ``LICHESS_API``).
+        query_params: URL query parameters.
+        auth: Whether to include the OAuth token.
+        accept: Accept header value.
+        stream: Whether to stream the response.
+
+    Returns:
+        Parsed JSON, an NDJSON generator, or the raw response.
+    """
     url = f"{LICHESS_API}/{endpoint}"
     headers = _get_headers(oauth_token=auth and LICHESS_TOKEN, accept=accept)
-    response = requests.get(url, params=query_params, headers=headers, stream=stream)
+    response = requests.get(url, params=query_params or {}, headers=headers, stream=stream)
     return _handle_response(response, url)
 
 
 def post_lichess(
     endpoint: str,
     body: str = "",
-    query_params: dict[str, str] = {},
+    query_params: dict[str, str] | None = None,
     auth: bool = False,
     accept: str | None = "application/x-ndjson",
 ) -> JsonObject | JsonGenerator | requests.Response:
+    """Send a POST request to the Lichess API.
+
+    Args:
+        endpoint: API endpoint path.
+        body: Request body string.
+        query_params: URL query parameters.
+        auth: Whether to include the OAuth token.
+        accept: Accept header value.
+
+    Returns:
+        Parsed JSON, an NDJSON generator, or the raw response.
+    """
     url = f"{LICHESS_API}/{endpoint}"
     headers = _get_headers(oauth_token=auth and LICHESS_TOKEN, accept=accept)
-    response = requests.post(url, params=query_params, headers=headers, data=body)
+    response = requests.post(url, params=query_params or {}, headers=headers, data=body)
     return _handle_response(response, url)
 
 
-def get_daily_puzzle():
+def get_daily_puzzle() -> JsonObject:
+    """Fetch today's Lichess daily puzzle.
+
+    Returns:
+        Puzzle data as a JSON object.
+    """
     logger.info("Getting daily puzzle")
     return get_lichess("puzzle/daily")
 
 
-def get_puzzle_by_id(puzzle_id: str):
+def get_puzzle_by_id(puzzle_id: str) -> JsonObject:
+    """Fetch a specific puzzle by ID.
+
+    Args:
+        puzzle_id: The Lichess puzzle identifier.
+
+    Returns:
+        Puzzle data as a JSON object.
+    """
     logger.info("Getting puzzle ID %s", puzzle_id)
     return get_lichess(f"puzzle/{puzzle_id}")
 
@@ -56,8 +95,21 @@ def get_random_puzzle(
     difficulty: str | int | None = None,
     theme: str | None = None,
     filter_seen: bool = True,
-):
-    params = {}
+) -> JsonObject:
+    """Fetch a random puzzle with optional filters.
+
+    Args:
+        difficulty: Difficulty level name or index.
+        theme: Tactical theme name.
+        filter_seen: Exclude previously seen puzzles (requires auth).
+
+    Returns:
+        Puzzle data as a JSON object.
+
+    Raises:
+        LichessError: If difficulty or theme is invalid.
+    """
+    params: dict[str, str] = {}
     if difficulty is not None:
         params["difficulty"] = get_difficulty(difficulty)
         if params["difficulty"] is None:
@@ -76,12 +128,28 @@ def get_random_puzzle(
 
 
 def random_puzzles(
-    difficulties: Iterable[str | int] | dict[str | int, int | float] = {},
-    themes: Iterable[str] | dict[str, int | float] = {},
+    difficulties: dict[str | int, int | float] | list[str | int] | None = None,
+    themes: dict[str, int | float] | list[str] | None = None,
     filter_seen: bool = True,
-):
-    diff_choices, diff_weights = [], []
-    theme_choices, theme_weights = [], []
+) -> Iterator[JsonObject]:
+    """Generate an infinite stream of random puzzles with weighted filters.
+
+    Args:
+        difficulties: Difficulty values or weighted dict of difficulties.
+        themes: Theme names or weighted dict of themes.
+        filter_seen: Exclude previously seen puzzles.
+
+    Yields:
+        Puzzle data JSON objects.
+
+    Raises:
+        LichessError: If any difficulty or theme is invalid.
+    """
+    diff_choices: list[str | None] = []
+    diff_weights: list[int | float] = []
+    theme_choices: list[str | None] = []
+    theme_weights: list[int | float] = []
+
     if difficulties:
         if not isinstance(difficulties, dict):
             difficulties = {d: 1 for d in difficulties}
@@ -110,7 +178,7 @@ def random_puzzles(
         theme_weights.append(1)
 
     while True:
-        params = {}
+        params: dict[str, str] = {}
         diff, theme = (
             choices(diff_choices, weights=diff_weights, k=1)[0],
             choices(theme_choices, weights=theme_weights, k=1)[0],
@@ -128,25 +196,55 @@ def random_puzzles(
         yield get_lichess("puzzle/next", query_params=params, auth=filter_seen)
 
 
-def get_games(*game_ids: str):
+def get_games(*game_ids: str) -> Iterator[JsonObject]:
+    """Export one or more games by ID.
+
+    Args:
+        *game_ids: One or more Lichess game IDs.
+
+    Yields:
+        Game data JSON objects.
+    """
     logger.info("Getting game IDs %s", game_ids)
     yield from post_lichess(
-        "games/export/_ids", body=",".join(game_ids), query_params={"pgnInJson": True}
+        "games/export/_ids", body=",".join(game_ids), query_params={"pgnInJson": "true"}
     )
 
 
-def get_game(game_id: str):
+def get_game(game_id: str) -> JsonObject:
+    """Export a single game by ID.
+
+    Args:
+        game_id: The Lichess game identifier.
+
+    Returns:
+        Game data as a JSON object.
+    """
     return list(get_games(game_id))[0]
 
 
-def get_puzzle_history(limit: int = 100):
+def get_puzzle_history(limit: int = 100) -> Iterator[JsonObject]:
+    """Fetch the authenticated user's puzzle history.
+
+    Args:
+        limit: Maximum number of puzzles to retrieve.
+
+    Yields:
+        Puzzle activity JSON objects.
+    """
     logger.info("Getting puzzle history, limit %s puzzles", limit)
     yield from get_lichess(
-        "puzzle/activity", query_params={"max": limit}, stream=True, auth=True
+        "puzzle/activity", query_params={"max": str(limit)}, stream=True, auth=True
     )
 
 
-def write_puzzle_history(filename: str | Path, limit: int = 100):
+def write_puzzle_history(filename: str | Path, limit: int = 100) -> None:
+    """Download puzzle history to a file with a progress bar.
+
+    Args:
+        filename: Destination file path.
+        limit: Maximum number of puzzles to download.
+    """
     logger.info("Writing puzzle history to file %s: limit %s puzzles", filename, limit)
     response = requests.get(
         f"{LICHESS_API}/puzzle/activity",

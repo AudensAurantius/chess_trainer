@@ -1,9 +1,14 @@
+"""Data models for Lichess API responses."""
+
 from datetime import datetime
+
 from ..model import Model, dataclass, timestamp
 
 
 @dataclass
 class Theme(Model):
+    """A Lichess puzzle theme (e.g. fork, pin, skewer)."""
+
     name: str
     description: str
     summary: str | None = None
@@ -11,12 +16,14 @@ class Theme(Model):
 
 @dataclass
 class LichessPlayer(Model):
+    """A player in a Lichess game, extracted from nested ``user`` object."""
+
     name: str | None = None
     id: str | None = None
     rating: int | None = None
     rating_diff: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._properties is not None:
             user = self._properties.pop("user")
             self.name = user["name"]
@@ -25,6 +32,8 @@ class LichessPlayer(Model):
 
 @dataclass
 class LichessPuzzle(Model):
+    """A puzzle from the Lichess API with flattened game/puzzle fields."""
+
     game_id: str | None = None
     game_to_puzzle: str | None = None
     id: str | None = None
@@ -34,7 +43,7 @@ class LichessPuzzle(Model):
     themes: list[str] | None = None
     initial_ply: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._properties is not None:
             game_details, puzzle_details = (
                 self._properties.pop("game", {}),
@@ -52,6 +61,8 @@ class LichessPuzzle(Model):
 
 @dataclass
 class LichessTimeControl(Model):
+    """Clock settings for a Lichess game."""
+
     initial: int
     total_time: int
     increment: int | None = None
@@ -59,6 +70,8 @@ class LichessTimeControl(Model):
 
 @dataclass
 class LichessGame(Model):
+    """A complete Lichess game with players and metadata."""
+
     id: str
     rated: bool
     variant: str
@@ -74,7 +87,7 @@ class LichessGame(Model):
     white: LichessPlayer | None = None
     black: LichessPlayer | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self._properties is not None:
             players = self._properties.pop("players")
             self.white = LichessPlayer.from_dict(players["white"])

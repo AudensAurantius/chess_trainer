@@ -1,29 +1,27 @@
-"""
-Lichess puzzle importer.
+"""Lichess puzzle importer.
 
 Fetches tactical puzzles from Lichess and converts them to TacticExercise format.
 """
 
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Iterator, Any
+from typing import Any
 
 import chess
 
-from .base import Importer
 from ..exercises import TacticExercise
 from ..lichess.api import (
-    get_puzzle_by_id,
-    get_random_puzzle,
-    random_puzzles,
-    get_puzzle_history,
     LichessError,
+    get_puzzle_by_id,
+    get_puzzle_history,
+    random_puzzles,
 )
 from ..lichess.models import LichessPuzzle
+from .base import Importer
 
 
 class LichessPuzzleImporter(Importer):
-    """
-    Import tactical puzzles from Lichess.
+    """Import tactical puzzles from Lichess.
 
     Supports multiple fetch modes:
     - By ID: Fetch specific puzzles
@@ -33,6 +31,7 @@ class LichessPuzzleImporter(Importer):
 
     @property
     def source_name(self) -> str:
+        """Return the importer source name."""
         return "Lichess Puzzles"
 
     def fetch(
@@ -43,8 +42,7 @@ class LichessPuzzleImporter(Importer):
         themes: list[str] | None = None,
         from_history: bool = False,
     ) -> Iterator[TacticExercise]:
-        """
-        Fetch puzzles from Lichess.
+        """Fetch puzzles from Lichess.
 
         Args:
             puzzle_ids: Specific puzzle IDs to fetch
@@ -61,7 +59,7 @@ class LichessPuzzleImporter(Importer):
                 try:
                     data = get_puzzle_by_id(puzzle_id)
                     yield self._convert_puzzle(data)
-                except (LichessError, KeyError) as e:
+                except (LichessError, KeyError):
                     # Log and continue
                     continue
 
@@ -98,8 +96,7 @@ class LichessPuzzleImporter(Importer):
             return None
 
     def _convert_puzzle(self, data: dict[str, Any]) -> TacticExercise:
-        """
-        Convert Lichess puzzle JSON to TacticExercise.
+        """Convert Lichess puzzle JSON to TacticExercise.
 
         Uses LichessPuzzle model as the canonical parser for Lichess API
         responses, then transforms to the exercise domain.
@@ -169,15 +166,33 @@ class LichessPuzzleImporter(Importer):
 
         # Add high-level categories
         tactical_themes = {
-            "fork", "pin", "skewer", "discoveredAttack",
-            "doubleCheck", "sacrifice", "deflection", "decoy",
-            "interference", "overloading", "xRayAttack", "zugzwang",
+            "fork",
+            "pin",
+            "skewer",
+            "discoveredAttack",
+            "doubleCheck",
+            "sacrifice",
+            "deflection",
+            "decoy",
+            "interference",
+            "overloading",
+            "xRayAttack",
+            "zugzwang",
         }
 
         mating_themes = {
-            "mate", "mateIn1", "mateIn2", "mateIn3", "mateIn4", "mateIn5",
-            "backRankMate", "smotheredMate", "hookMate", "arabianMate",
-            "anastasiaMate", "bodenMate",
+            "mate",
+            "mateIn1",
+            "mateIn2",
+            "mateIn3",
+            "mateIn4",
+            "mateIn5",
+            "backRankMate",
+            "smotheredMate",
+            "hookMate",
+            "arabianMate",
+            "anastasiaMate",
+            "bodenMate",
         }
 
         if any(t in tactical_themes for t in lichess_themes):

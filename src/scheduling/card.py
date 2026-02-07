@@ -1,5 +1,4 @@
-"""
-Review card model for spaced repetition.
+"""Review card model for spaced repetition.
 
 A ReviewCard links an Exercise to its scheduling state, tracking memory
 strength and review history.
@@ -14,16 +13,15 @@ from typing import Any
 class CardState(Enum):
     """States a card can be in within the SR system."""
 
-    NEW = auto()       # Never reviewed
+    NEW = auto()  # Never reviewed
     LEARNING = auto()  # In initial learning phase
-    REVIEW = auto()    # Graduated to review queue
+    REVIEW = auto()  # Graduated to review queue
     RELEARNING = auto()  # Failed review, back in learning
 
 
 @dataclass
 class ReviewCard:
-    """
-    Tracks the spaced repetition state for a single exercise.
+    """Tracks the spaced repetition state for a single exercise.
 
     The card contains all FSRS parameters needed to schedule the next review
     and predict memory retention.
@@ -34,7 +32,7 @@ class ReviewCard:
 
     # FSRS parameters (using FSRS-4.5 defaults)
     difficulty: float = 0.3  # D: difficulty, range [0,1], lower = easier
-    stability: float = 0.0   # S: memory stability in days
+    stability: float = 0.0  # S: memory stability in days
     retrievability: float = 1.0  # R: probability of recall
 
     # Scheduling state

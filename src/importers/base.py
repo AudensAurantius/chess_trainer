@@ -1,10 +1,8 @@
-"""
-Base importer interface.
-"""
+"""Base importer interface."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator
 
 from ..exercises import Exercise
 
@@ -21,6 +19,7 @@ class ImportResult:
 
     @property
     def success(self) -> bool:
+        """Return True if no errors occurred during import."""
         return len(self.errors) == 0
 
     def __str__(self) -> str:
@@ -32,8 +31,7 @@ class ImportResult:
 
 
 class Importer(ABC):
-    """
-    Base class for content importers.
+    """Base class for content importers.
 
     Importers fetch exercises from external sources (Lichess, Chessable,
     PGN files, etc.) and convert them to the internal Exercise format.
@@ -47,8 +45,7 @@ class Importer(ABC):
 
     @abstractmethod
     def fetch(self, **kwargs) -> Iterator[Exercise]:
-        """
-        Fetch exercises from the source.
+        """Fetch exercises from the source.
 
         Yields Exercise objects as they are fetched. Implementations
         should handle pagination, rate limiting, etc.
@@ -62,8 +59,7 @@ class Importer(ABC):
         ...
 
     def import_to(self, store, **kwargs) -> ImportResult:
-        """
-        Import exercises directly to a store.
+        """Import exercises directly to a store.
 
         Convenience method that handles iteration and error tracking.
 

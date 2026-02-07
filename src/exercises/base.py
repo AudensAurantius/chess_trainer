@@ -1,6 +1,4 @@
-"""
-Base classes for the exercise domain model.
-"""
+"""Base classes for the exercise domain model."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -14,9 +12,9 @@ import chess
 class ExerciseType(Enum):
     """Categories of chess training exercises."""
 
-    TACTIC = auto()      # Find the winning move(s)
-    OPENING = auto()     # Play the theory move
-    ENDGAME = auto()     # Execute the winning technique
+    TACTIC = auto()  # Find the winning move(s)
+    OPENING = auto()  # Play the theory move
+    ENDGAME = auto()  # Execute the winning technique
     POSITIONAL = auto()  # Identify/execute the key idea
 
 
@@ -33,8 +31,7 @@ class ExerciseResult:
 
     @property
     def grade(self) -> int:
-        """
-        Convert result to SR grade (1-4 scale).
+        """Convert result to SR grade (1-4 scale).
 
         1 = forgot/wrong
         2 = hard (correct but slow or with mistakes)
@@ -53,8 +50,7 @@ class ExerciseResult:
 
 @dataclass
 class Exercise(ABC):
-    """
-    Base class for all training exercises.
+    """Base class for all training exercises.
 
     An exercise represents a single training item: a position plus a challenge
     that tests the user's understanding or pattern recognition.
@@ -82,8 +78,7 @@ class Exercise(ABC):
 
     @abstractmethod
     def get_challenge(self) -> str:
-        """
-        Get the challenge text shown to the user.
+        """Get the challenge text shown to the user.
 
         Returns:
             A string describing what the user should do.
@@ -92,8 +87,7 @@ class Exercise(ABC):
 
     @abstractmethod
     def get_solution(self) -> list[chess.Move]:
-        """
-        Get the solution move(s) for this exercise.
+        """Get the solution move(s) for this exercise.
 
         Returns:
             List of moves constituting the solution.
@@ -102,8 +96,7 @@ class Exercise(ABC):
 
     @abstractmethod
     def evaluate(self, moves: list[chess.Move], time_taken_ms: int) -> ExerciseResult:
-        """
-        Evaluate the user's response.
+        """Evaluate the user's response.
 
         Args:
             moves: The moves played by the user.
@@ -116,8 +109,7 @@ class Exercise(ABC):
 
     @abstractmethod
     def get_explanation(self) -> str:
-        """
-        Get the explanation shown after the attempt.
+        """Get the explanation shown after the attempt.
 
         Returns:
             A string explaining the solution.

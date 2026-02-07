@@ -1,12 +1,10 @@
-"""
-Unicode chess board rendering for the terminal.
+"""Unicode chess board rendering for the terminal.
 
 Uses Rich for styled output with colored squares and piece symbols.
 """
 
 import chess
 from rich.text import Text
-
 
 # Unicode chess pieces
 PIECE_SYMBOLS = {
@@ -39,8 +37,7 @@ def render_board(
     highlight_squares: set[int] | None = None,
     last_move: chess.Move | None = None,
 ) -> Text:
-    """
-    Render a chess board as a Rich Text object.
+    """Render a chess board as a Rich Text object.
 
     Args:
         board: The chess.Board to render.
@@ -95,8 +92,7 @@ def render_board(
 
 
 def render_board_simple(board: chess.Board, *, flipped: bool = False) -> str:
-    """
-    Render a plain-text board (no Rich styling).
+    """Render a plain-text board (no Rich styling).
 
     Useful for environments without color support.
     """
@@ -128,8 +124,7 @@ def format_move_san(board: chess.Board, move: chess.Move) -> str:
 
 
 def format_solution_line(board: chess.Board, moves: list[chess.Move]) -> str:
-    """
-    Format a sequence of moves as a readable line.
+    """Format a sequence of moves as a readable line.
 
     Shows move numbers and SAN notation, e.g. "1. e4 e5 2. Nf3"
     """

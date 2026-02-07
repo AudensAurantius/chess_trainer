@@ -1,24 +1,21 @@
-"""
-Main CLI application using Typer.
-"""
+"""Main CLI application using Typer."""
 
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import chess
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from ..storage import Repository
 from ..exercises import Exercise, ExerciseType
 from ..importers import LichessPuzzleImporter
-from ..training import TrainingSession, SessionConfig
 from ..scheduling.fsrs import Rating
-from .board import render_board, format_solution_line
+from ..storage import Repository
+from ..training import SessionConfig, TrainingSession
+from .board import format_solution_line, render_board
 
 app = typer.Typer(
     name="chess-trainer",
@@ -39,14 +36,14 @@ def get_repo(db_path: Path | None = None) -> Repository:
 @app.command()
 def import_puzzles(
     count: int = typer.Option(20, "--count", "-n", help="Number of puzzles to import"),
-    difficulty: Optional[str] = typer.Option(
-        None, "--difficulty", "-d",
-        help="Difficulty filter (easiest, easier, normal, harder, hardest)"
+    difficulty: str | None = typer.Option(
+        None,
+        "--difficulty",
+        "-d",
+        help="Difficulty filter (easiest, easier, normal, harder, hardest)",
     ),
-    theme: Optional[str] = typer.Option(
-        None, "--theme", "-t", help="Tactical theme filter"
-    ),
-    db: Optional[Path] = typer.Option(None, "--db", help="Database path"),
+    theme: str | None = typer.Option(None, "--theme", "-t", help="Tactical theme filter"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Import tactical puzzles from Lichess."""
     with get_repo(db) as repo:
@@ -62,17 +59,17 @@ def import_puzzles(
                 themes=themes,
             )
 
-        console.print(f"\n[green]✓[/green] {result}")
+        console.print(f"\n[green]\u2713[/green] {result}")
 
         if result.errors:
-            console.print(f"[yellow]Errors:[/yellow]")
+            console.print("[yellow]Errors:[/yellow]")
             for error in result.errors[:5]:
                 console.print(f"  - {error}")
 
 
 @app.command()
 def stats(
-    db: Optional[Path] = typer.Option(None, "--db", help="Database path"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Show training statistics."""
     with get_repo(db) as repo:
@@ -101,10 +98,7 @@ def stats(
             table.add_row("Total cards", str(card_stats["total_cards"]))
             table.add_row("Due now", str(card_stats["due_count"]))
             table.add_row("Total reviews", str(card_stats["total_reviews"]))
-            table.add_row(
-                "Avg stability",
-                f"{card_stats['average_stability_days']:.1f} days"
-            )
+            table.add_row("Avg stability", f"{card_stats['average_stability_days']:.1f} days")
 
             for state, count in card_stats["state_counts"].items():
                 table.add_row(f"  {state}", str(count))
@@ -150,8 +144,7 @@ def _format_next_review(due: datetime) -> str:
 
 
 def _collect_moves(exercise: Exercise) -> tuple[list[chess.Move], int]:
-    """
-    Collect move(s) from the user for the current exercise.
+    """Collect move(s) from the user for the current exercise.
 
     For tactics, the solution alternates user/opponent moves. We collect
     user moves one at a time, playing opponent responses automatically.
@@ -201,7 +194,10 @@ def _collect_moves(exercise: Exercise) -> tuple[list[chess.Move], int]:
 
             move = _parse_move(board, text)
             if move is None:
-                console.print("[red]Invalid move. Use notation like Nf3, e4, or e2e4. 'h' for hint, Enter to give up.[/red]")
+                console.print(
+                    "[red]Invalid move. Use notation like Nf3, e4, or e2e4."
+                    " 'h' for hint, Enter to give up.[/red]"
+                )
                 console.print(f"[bold]{prompt_text}:[/bold] ", end="")
                 continue
 
@@ -232,11 +228,11 @@ def _collect_moves(exercise: Exercise) -> tuple[list[chess.Move], int]:
 def train(
     new_cards: int = typer.Option(10, "--new", "-n", help="Max new cards"),
     reviews: int = typer.Option(50, "--reviews", "-r", help="Max reviews"),
-    exercise_type: Optional[str] = typer.Option(
-        None, "--type", "-t", help="Exercise type filter"
+    exercise_type: str | None = typer.Option(None, "--type", "-t", help="Exercise type filter"),
+    self_report: bool = typer.Option(
+        False, "--self-report", "-s", help="Self-report mode (no move input)"
     ),
-    self_report: bool = typer.Option(False, "--self-report", "-s", help="Self-report mode (no move input)"),
-    db: Optional[Path] = typer.Option(None, "--db", help="Database path"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Start a training session."""
     with get_repo(db) as repo:
@@ -264,9 +260,12 @@ def train(
             return
 
         total = session.remaining
-        console.print(f"\n[bold]Training Session[/bold] — {total} cards")
+        console.print(f"\n[bold]Training Session[/bold] \u2014 {total} cards")
         if not self_report:
-            console.print("[dim]Type moves in SAN (Nf3) or UCI (g1f3). 'h' for hint, Enter to give up, 'q' to quit.[/dim]")
+            console.print(
+                "[dim]Type moves in SAN (Nf3) or UCI (g1f3)."
+                " 'h' for hint, Enter to give up, 'q' to quit.[/dim]"
+            )
         console.print()
 
         while True:
@@ -280,11 +279,16 @@ def train(
 
             # Show the board
             flipped = board.turn == chess.BLACK
-            console.print(Panel.fit(
-                render_board(board, flipped=flipped),
-                title=progress,
-                subtitle=f"[dim]{exercise.exercise_type.name} | {', '.join(exercise.tags[:3]) or 'untagged'}[/dim]",
-            ))
+            console.print(
+                Panel.fit(
+                    render_board(board, flipped=flipped),
+                    title=progress,
+                    subtitle=(
+                        f"[dim]{exercise.exercise_type.name}"
+                        f" | {', '.join(exercise.tags[:3]) or 'untagged'}[/dim]"
+                    ),
+                )
+            )
             console.print(f"[bold]{exercise.get_challenge()}[/bold]")
 
             if self_report:
@@ -299,10 +303,15 @@ def train(
                 for move in exercise.get_solution():
                     post_board.push(move)
                 console.print()
-                console.print(render_board(
-                    post_board, flipped=flipped,
-                    last_move=exercise.get_solution()[-1] if exercise.get_solution() else None,
-                ))
+                console.print(
+                    render_board(
+                        post_board,
+                        flipped=flipped,
+                        last_move=(
+                            exercise.get_solution()[-1] if exercise.get_solution() else None
+                        ),
+                    )
+                )
 
                 # Get self-rating
                 while True:
@@ -374,7 +383,7 @@ def train(
             updated_card = session.rate(rating)
 
             next_review = _format_next_review(updated_card.due)
-            console.print(f"[green]→ Next review in: {next_review}[/green]\n")
+            console.print(f"[green]\u2192 Next review in: {next_review}[/green]\n")
 
             if session.remaining > 0:
                 continue_training = typer.confirm("Continue?", default=True)
@@ -385,18 +394,22 @@ def train(
         final_stats = session.end()
 
         console.print("\n" + "=" * 40)
-        console.print(Panel(
-            f"Exercises: {final_stats.exercises_shown}\n"
-            f"Correct: {final_stats.correct} | Partial: {final_stats.partial} | Incorrect: {final_stats.incorrect}\n"
-            f"Accuracy: {final_stats.accuracy:.1f}%\n"
-            f"Duration: {final_stats.duration_minutes:.1f} minutes",
-            title="Session Complete",
-        ))
+        console.print(
+            Panel(
+                f"Exercises: {final_stats.exercises_shown}\n"
+                f"Correct: {final_stats.correct}"
+                f" | Partial: {final_stats.partial}"
+                f" | Incorrect: {final_stats.incorrect}\n"
+                f"Accuracy: {final_stats.accuracy:.1f}%\n"
+                f"Duration: {final_stats.duration_minutes:.1f} minutes",
+                title="Session Complete",
+            )
+        )
 
 
 @app.command()
 def init_cards(
-    db: Optional[Path] = typer.Option(None, "--db", help="Database path"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Create review cards for all exercises that don't have one."""
     with get_repo(db) as repo:
@@ -407,7 +420,7 @@ def init_cards(
                 repo.cards.get_or_create(exercise.id)
                 created += 1
 
-        console.print(f"[green]✓[/green] Created {created} new review cards")
+        console.print(f"[green]\u2713[/green] Created {created} new review cards")
 
 
 def main():

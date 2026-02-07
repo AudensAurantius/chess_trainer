@@ -1,12 +1,10 @@
-"""
-Review card storage operations.
-"""
+"""Review card storage operations."""
 
 from datetime import datetime
 
 import duckdb
 
-from ..scheduling import ReviewCard, CardState
+from ..scheduling import CardState, ReviewCard
 from ..scheduling.fsrs import Rating
 
 
@@ -14,6 +12,7 @@ class CardStore:
     """Store for review card CRUD and scheduling queries."""
 
     def __init__(self, conn: duckdb.DuckDBPyConnection):
+        """Initialize card store with database connection."""
         self.conn = conn
 
     def get(self, exercise_id: str) -> ReviewCard | None:
@@ -72,8 +71,7 @@ class CardStore:
         now: datetime | None = None,
         include_new: bool = True,
     ) -> list[ReviewCard]:
-        """
-        Get cards due for review.
+        """Get cards due for review.
 
         Args:
             limit: Maximum number of cards to return
@@ -171,9 +169,7 @@ class CardStore:
             "SELECT AVG(stability) FROM review_cards WHERE state = 'REVIEW'"
         ).fetchone()[0]
 
-        total_reviews = self.conn.execute(
-            "SELECT SUM(reps) FROM review_cards"
-        ).fetchone()[0]
+        total_reviews = self.conn.execute("SELECT SUM(reps) FROM review_cards").fetchone()[0]
 
         return {
             "total_cards": total,

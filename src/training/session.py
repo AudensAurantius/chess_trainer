@@ -1,5 +1,4 @@
-"""
-Training session implementation.
+"""Training session implementation.
 
 A session coordinates the flow of exercises through the spaced repetition
 system, presenting exercises, collecting responses, and updating schedules.
@@ -7,12 +6,11 @@ system, presenting exercises, collecting responses, and updating schedules.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable
 
 import chess
 
 from ..exercises import Exercise, ExerciseResult, ExerciseType
-from ..scheduling import ReviewCard, CardState, FSRSScheduler, FSRSParameters
+from ..scheduling import CardState, FSRSParameters, FSRSScheduler, ReviewCard
 from ..scheduling.fsrs import Rating, SchedulingResult
 from ..storage import Repository
 
@@ -71,8 +69,7 @@ class SessionStats:
 
 
 class TrainingSession:
-    """
-    Manages a single training session.
+    """Manages a single training session.
 
     Handles the flow of:
     1. Fetching due cards and new cards
@@ -82,6 +79,7 @@ class TrainingSession:
     """
 
     def __init__(self, repo: Repository, config: SessionConfig | None = None):
+        """Initialize training session with repository and config."""
         self.repo = repo
         self.config = config or SessionConfig()
         self.scheduler = FSRSScheduler(self.config.fsrs_params)
@@ -114,12 +112,10 @@ class TrainingSession:
         if self.config.exercise_types:
             type_names = {t.name for t in self.config.exercise_types}
             due_cards = [
-                c for c in due_cards
-                if self._get_exercise_type(c.exercise_id) in type_names
+                c for c in due_cards if self._get_exercise_type(c.exercise_id) in type_names
             ]
             new_cards = [
-                c for c in new_cards
-                if self._get_exercise_type(c.exercise_id) in type_names
+                c for c in new_cards if self._get_exercise_type(c.exercise_id) in type_names
             ]
 
         # Interleave new cards with reviews
@@ -162,8 +158,7 @@ class TrainingSession:
         return self._current_card
 
     def next(self) -> Exercise | None:
-        """
-        Get the next exercise to present.
+        """Get the next exercise to present.
 
         Returns None when the session is complete.
         """
@@ -198,8 +193,7 @@ class TrainingSession:
         moves: list[chess.Move],
         time_taken_ms: int,
     ) -> tuple[ExerciseResult, SchedulingResult]:
-        """
-        Submit an answer for the current exercise.
+        """Submit an answer for the current exercise.
 
         Args:
             moves: The moves played by the user
@@ -226,8 +220,7 @@ class TrainingSession:
         return result, self._current_scheduling
 
     def rate(self, rating: Rating) -> ReviewCard:
-        """
-        Apply the user's self-rating and update the schedule.
+        """Apply the user's self-rating and update the schedule.
 
         Args:
             rating: User's rating of recall difficulty
@@ -268,8 +261,7 @@ class TrainingSession:
         return updated_card
 
     def auto_rate(self, result: ExerciseResult) -> Rating:
-        """
-        Automatically determine rating based on exercise result.
+        """Automatically determine rating based on exercise result.
 
         Uses the grade from ExerciseResult to map to FSRS ratings.
         """

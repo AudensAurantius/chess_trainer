@@ -1,6 +1,4 @@
-"""
-Command-line interface for chess trainer.
-"""
+"""Command-line interface for chess trainer."""
 
 from .app import app
 

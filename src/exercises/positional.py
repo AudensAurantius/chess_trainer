@@ -1,5 +1,4 @@
-"""
-Positional exercise implementation.
+"""Positional exercise implementation.
 
 Positional exercises test understanding of strategic concepts: weak squares,
 piece activity, pawn structure, prophylaxis, etc. Unlike tactics, the focus
@@ -17,8 +16,7 @@ from .base import Exercise, ExerciseResult, ExerciseType
 
 @dataclass
 class PositionalExercise(Exercise):
-    """
-    A positional/strategic exercise.
+    """A positional/strategic exercise.
 
     The user must identify the key positional idea and execute it.
     Multiple moves may be acceptable if they achieve the same goal.
@@ -33,6 +31,7 @@ class PositionalExercise(Exercise):
     wrong_ideas: list[str] = field(default_factory=list)  # Common mistakes
 
     def get_challenge(self) -> str:
+        """Return the challenge text for this positional exercise."""
         if self.question:
             return self.question
         elif self.concept:
@@ -41,9 +40,11 @@ class PositionalExercise(Exercise):
             return f"{self.side_to_move} to play. Find the best plan."
 
     def get_solution(self) -> list[chess.Move]:
+        """Return the correct positional moves."""
         return [chess.Move.from_uci(uci) for uci in self.correct_moves]
 
     def evaluate(self, moves: list[chess.Move], time_taken_ms: int) -> ExerciseResult:
+        """Evaluate user's moves against correct positional concepts."""
         correct_move_objs = self.get_solution()
 
         if not moves:
@@ -89,6 +90,7 @@ class PositionalExercise(Exercise):
         )
 
     def get_explanation(self) -> str:
+        """Return the positional concept and key ideas as explanation."""
         parts = []
 
         if self.concept:
@@ -126,6 +128,7 @@ class PositionalExercise(Exercise):
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PositionalExercise":
+        """Deserialize a PositionalExercise from a dictionary."""
         return cls(
             id=data["id"],
             fen=data["fen"],

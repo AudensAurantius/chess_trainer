@@ -1,6 +1,4 @@
-"""
-Main repository class managing DuckDB connection and stores.
-"""
+"""Main repository class managing DuckDB connection and stores."""
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -8,28 +6,26 @@ from typing import TYPE_CHECKING
 import duckdb
 
 if TYPE_CHECKING:
-    from .exercise_store import ExerciseStore
     from .card_store import CardStore
+    from .exercise_store import ExerciseStore
 
 
 class Repository:
-    """
-    Central repository managing database connection and stores.
+    """Central repository managing database connection and stores.
 
     Provides transactional access to exercises and review cards.
     """
 
     def __init__(self, db_path: str | Path | None = None):
-        """
-        Initialize repository with optional database path.
+        """Initialize repository with optional database path.
 
         Args:
             db_path: Path to database file. If None, uses in-memory database.
         """
         self.db_path = Path(db_path) if db_path else None
         self._conn: duckdb.DuckDBPyConnection | None = None
-        self._exercises: "ExerciseStore | None" = None
-        self._cards: "CardStore | None" = None
+        self._exercises: ExerciseStore | None = None
+        self._cards: CardStore | None = None
 
     @property
     def conn(self) -> duckdb.DuckDBPyConnection:
