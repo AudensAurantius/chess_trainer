@@ -18,6 +18,7 @@ from ..lichess.api import (
     get_puzzle_history,
     LichessError,
 )
+from ..lichess.models import LichessPuzzle
 
 
 class LichessPuzzleImporter(Importer):
@@ -67,9 +68,7 @@ class LichessPuzzleImporter(Importer):
         elif from_history:
             for data in get_puzzle_history(limit=count):
                 try:
-                    # History format wraps puzzle in a "puzzle" key
-                    puzzle_data = data.get("puzzle", data)
-                    yield self._convert_puzzle(puzzle_data)
+                    yield self._convert_puzzle(data)
                 except (KeyError, TypeError):
                     continue
 
@@ -102,30 +101,17 @@ class LichessPuzzleImporter(Importer):
         """
         Convert Lichess puzzle JSON to TacticExercise.
 
-        Lichess format:
-        {
-            "game": {"id": "...", "pgn": "..."},
-            "puzzle": {
-                "id": "...",
-                "rating": 1500,
-                "plays": 12345,
-                "solution": ["e2e4", "d7d5", ...],
-                "themes": ["fork", "middlegame"]
-            }
-        }
+        Uses LichessPuzzle model as the canonical parser for Lichess API
+        responses, then transforms to the exercise domain.
         """
-        puzzle = data.get("puzzle", data)
-        game = data.get("game", {})
+        puzzle = LichessPuzzle.from_dict(data)
 
-        puzzle_id = puzzle["id"]
-        solution = puzzle["solution"]
-        themes = puzzle.get("themes", [])
-        rating = puzzle.get("rating")
+        solution = puzzle.solution or []
+        themes = puzzle.themes or []
 
         # Build the position by playing the game up to the puzzle position
         # The PGN ends just before the first solution move
-        pgn = game.get("pgn", "")
-        board = self._position_from_pgn(pgn)
+        board = self._position_from_pgn(puzzle.game_to_puzzle or "")
 
         # The first move in solution is the opponent's move that creates the tactic
         # We need to play it to get to the actual puzzle position
@@ -135,16 +121,16 @@ class LichessPuzzleImporter(Importer):
                 board.push(setup_move)
 
         return TacticExercise(
-            id=f"lichess:{puzzle_id}",
+            id=f"lichess:{puzzle.id}",
             fen=board.fen(),
             tags=self._map_themes(themes),
             source="lichess",
-            source_url=f"https://lichess.org/training/{puzzle_id}",
-            difficulty=rating,
+            source_url=f"https://lichess.org/training/{puzzle.id}",
+            difficulty=puzzle.rating,
             created_at=datetime.now(),
             solution=solution[1:] if len(solution) > 1 else solution,  # Skip setup move
             themes=themes,
-            game_id=game.get("id"),
+            game_id=puzzle.game_id,
         )
 
     def _position_from_pgn(self, pgn: str) -> chess.Board:
