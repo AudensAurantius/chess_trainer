@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "chess-trainer"
 version = "0.1.0a1"
 description = "Spaced repetition training system for chess improvement"
-readme = "claude.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 
