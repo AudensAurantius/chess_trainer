@@ -484,6 +484,32 @@ def config_show() -> None:
     )
 
 
+@app.command()
+def web(
+    host: str = typer.Option(None, "--host", "-H", help="Bind host"),
+    port: int = typer.Option(None, "--port", "-p", help="Bind port"),
+):
+    """Launch the web training interface."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print(
+            "[red]Web dependencies not installed.[/red]\n"
+            "Install with: pip install chess-trainer[web]"
+        )
+        raise typer.Exit(1)
+
+    from ..web import create_app
+
+    cfg = _get_config()
+    bind_host = host or cfg.web.host
+    bind_port = port or cfg.web.port
+
+    web_app = create_app(cfg)
+    console.print(f"[green]Starting web server at http://{bind_host}:{bind_port}[/green]")
+    uvicorn.run(web_app, host=bind_host, port=bind_port)
+
+
 def main():
     """Entry point for the CLI."""
     app()

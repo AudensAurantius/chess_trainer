@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Chess Trainer{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>Chess Trainer</h1>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('exercise_count', 0) }}</div>
+            <div class="stat-label">Exercises</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('total_cards', 0) }}</div>
+            <div class="stat-label">Cards</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('due_count', 0) }}</div>
+            <div class="stat-label">Due Now</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('total_reviews', 0) }}</div>
+            <div class="stat-label">Total Reviews</div>
+        </div>
+    </div>
+
+    <div class="action-panel">
+        <a href="/train" class="btn btn-primary btn-large">Start Training</a>
+    </div>
+
+    {% if stats.get('state_counts') %}
+    <div class="card-states">
+        <h2>Card States</h2>
+        <div class="state-bars">
+            {% for state, count in stats['state_counts'].items() %}
+            <div class="state-bar">
+                <span class="state-name">{{ state }}</span>
+                <div class="bar-track">
+                    <div class="bar-fill bar-{{ state|lower }}"
+                         style="width: {{ (count / stats.get('total_cards', 1) * 100)|round }}%"></div>
+                </div>
+                <span class="state-count">{{ count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

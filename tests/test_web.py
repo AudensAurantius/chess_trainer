@@ -1,0 +1,155 @@
+"""Tests for the web interface."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.config import AppConfig
+from src.exercises import TacticExercise
+from src.storage import Repository
+from src.web import create_app
+
+SAMPLE_FEN = "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
+
+
+@pytest.fixture
+def app(tmp_path):
+    config = AppConfig()
+    config.database.path = str(tmp_path / "test.db")
+    return create_app(config)
+
+
+@pytest.fixture
+def client(app):
+    return TestClient(app)
+
+
+@pytest.fixture
+def seeded_client(app, tmp_path):
+    with Repository(tmp_path / "test.db") as repo:
+        tactic = TacticExercise(
+            id="test:001",
+            fen=SAMPLE_FEN,
+            tags=["fork", "tactic"],
+            source="test",
+            difficulty=1500.0,
+            solution=["g7g6"],
+            themes=["fork"],
+        )
+        repo.exercises.add(tactic)
+        repo.cards.get_or_create(tactic.id)
+    return TestClient(app)
+
+
+class TestPages:
+    def test_dashboard(self, client):
+        res = client.get("/")
+        assert res.status_code == 200
+        assert "Chess Trainer" in res.text
+
+    def test_train_page(self, client):
+        res = client.get("/train")
+        assert res.status_code == 200
+        assert "Training Session" in res.text
+
+    def test_stats_page(self, client):
+        res = client.get("/stats")
+        assert res.status_code == 200
+        assert "Statistics" in res.text
+
+    def test_static_css(self, client):
+        res = client.get("/static/css/style.css")
+        assert res.status_code == 200
+
+    def test_static_js(self, client):
+        res = client.get("/static/js/training.js")
+        assert res.status_code == 200
+
+
+class TestSessionAPI:
+    def test_start_empty(self, client):
+        res = client.post("/api/session/start", json={})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "started"
+        assert data["queue_size"] == 0
+
+    def test_start_with_exercises(self, seeded_client):
+        res = seeded_client.post("/api/session/start", json={})
+        data = res.json()
+        assert data["queue_size"] == 1
+
+    def test_next_without_session(self, client):
+        res = client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "complete"
+
+    def test_full_session_flow(self, seeded_client):
+        # Start
+        res = seeded_client.post("/api/session/start", json={})
+        assert res.json()["queue_size"] == 1
+
+        # Next exercise
+        res = seeded_client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "ok"
+        assert data["fen"] == SAMPLE_FEN
+        assert data["side_to_move"] == "Black"
+
+        # Submit correct move
+        res = seeded_client.post("/api/session/move", json={"move": "g7g6"})
+        data = res.json()
+        assert data["valid"] is True
+        assert data["correct"] is True
+        assert data["finished"] is True
+
+        # Get solution
+        res = seeded_client.get("/api/session/solution")
+        data = res.json()
+        assert "g6" in data["solution_san"]
+
+        # Rate
+        res = seeded_client.post("/api/session/rate", json={"rating": 3})
+        data = res.json()
+        assert "next_review" in data
+
+        # Next should complete
+        res = seeded_client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "complete"
+
+    def test_wrong_move(self, seeded_client):
+        seeded_client.post("/api/session/start", json={})
+        seeded_client.get("/api/session/next")
+
+        # g8f6 is legal but not the solution (g7g6)
+        res = seeded_client.post("/api/session/move", json={"move": "g8f6"})
+        data = res.json()
+        assert data["valid"] is True
+        assert data["correct"] is False
+        assert data["finished"] is True
+
+    def test_invalid_move_format(self, seeded_client):
+        seeded_client.post("/api/session/start", json={})
+        seeded_client.get("/api/session/next")
+
+        res = seeded_client.post("/api/session/move", json={"move": "xyz"})
+        data = res.json()
+        assert data["valid"] is False
+
+    def test_rate_invalid(self, client):
+        res = client.post("/api/session/rate", json={"rating": 5})
+        assert res.status_code == 400
+
+    def test_end_session(self, seeded_client):
+        seeded_client.post("/api/session/start", json={})
+        res = seeded_client.post("/api/session/end")
+        data = res.json()
+        assert data["status"] == "ended"
+
+
+class TestStatsAPI:
+    def test_get_stats(self, client):
+        res = client.get("/api/stats")
+        assert res.status_code == 200
+        data = res.json()
+        assert "exercise_count" in data

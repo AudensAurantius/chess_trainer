@@ -1,0 +1,443 @@
+/* Chess Trainer — Lichess-inspired dark theme */
+
+:root {
+    --bg-primary: #161512;
+    --bg-secondary: #1e1d1b;
+    --bg-card: #262421;
+    --bg-hover: #302e2c;
+    --text-primary: #bababa;
+    --text-secondary: #8b8986;
+    --text-bright: #e0e0e0;
+    --accent: #629924;
+    --accent-hover: #76b133;
+    --danger: #c33;
+    --warning: #bf811d;
+    --success: #629924;
+    --border: #3a3733;
+    --board-light: #f0d9b5;
+    --board-dark: #b58863;
+    --highlight: rgba(155, 199, 0, 0.41);
+    --font-main: 'Noto Sans', 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --radius: 4px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-main);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* Navigation */
+.navbar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+    display: flex;
+    align-items: center;
+    height: 48px;
+}
+
+.nav-brand a {
+    color: var(--text-bright);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+}
+
+.nav-links {
+    margin-left: 2rem;
+    display: flex;
+    gap: 0.25rem;
+}
+
+.nav-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    transition: color 0.15s, background 0.15s;
+}
+
+.nav-link:hover {
+    color: var(--text-bright);
+    background: var(--bg-hover);
+}
+
+/* Layout */
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 0.5rem 1.25rem;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.1s;
+    font-family: var(--font-main);
+}
+
+.btn:active {
+    transform: scale(0.97);
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background: var(--border);
+}
+
+.btn-large {
+    padding: 0.75rem 2rem;
+    font-size: 1.05rem;
+}
+
+/* Rating buttons */
+.btn-again {
+    background: #c33;
+    color: #fff;
+}
+
+.btn-again:hover {
+    background: #d44;
+}
+
+.btn-hard {
+    background: #bf811d;
+    color: #fff;
+}
+
+.btn-hard:hover {
+    background: #d09328;
+}
+
+.btn-good {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn-good:hover {
+    background: var(--accent-hover);
+}
+
+.btn-easy {
+    background: #2b95d6;
+    color: #fff;
+}
+
+.btn-easy:hover {
+    background: #3ba0e0;
+}
+
+/* Stats grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+}
+
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1.2;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Card states */
+.card-states {
+    margin-top: 2rem;
+}
+
+.card-states h2 {
+    color: var(--text-bright);
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.state-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.state-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.state-name {
+    font-size: 0.85rem;
+    width: 80px;
+    color: var(--text-secondary);
+}
+
+.bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s;
+}
+
+.bar-new { background: #2b95d6; }
+.bar-learning { background: var(--warning); }
+.bar-review { background: var(--success); }
+.bar-relearning { background: var(--danger); }
+
+.state-count {
+    font-size: 0.85rem;
+    width: 40px;
+    text-align: right;
+    color: var(--text-secondary);
+}
+
+/* Action panel */
+.action-panel {
+    margin: 2rem 0;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+/* Panel */
+.panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+}
+
+.panel h1 {
+    color: var(--text-bright);
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Training page */
+.training-container {
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.exercise-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.board-area {
+    margin: 0 auto 1.5rem;
+    max-width: 480px;
+}
+
+.board {
+    width: 100%;
+}
+
+.challenge {
+    text-align: center;
+    font-size: 1.1rem;
+    color: var(--text-bright);
+    margin-bottom: 1rem;
+}
+
+.feedback {
+    text-align: center;
+    padding: 0.75rem;
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-weight: 600;
+}
+
+.feedback-correct {
+    background: rgba(98, 153, 36, 0.15);
+    color: var(--success);
+    border: 1px solid rgba(98, 153, 36, 0.3);
+}
+
+.feedback-wrong {
+    background: rgba(204, 51, 51, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(204, 51, 51, 0.3);
+}
+
+.feedback-partial {
+    background: rgba(191, 129, 29, 0.15);
+    color: var(--warning);
+    border: 1px solid rgba(191, 129, 29, 0.3);
+}
+
+.feedback-info {
+    background: rgba(43, 149, 214, 0.15);
+    color: #2b95d6;
+    border: 1px solid rgba(43, 149, 214, 0.3);
+}
+
+/* Solution */
+.solution {
+    text-align: center;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    color: var(--text-bright);
+}
+
+/* Rating panel */
+.rating-panel {
+    margin: 1rem 0;
+}
+
+.rating-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1rem;
+}
+
+.rating-buttons .btn {
+    flex: 1;
+    max-width: 100px;
+    text-align: center;
+}
+
+/* Controls */
+.controls {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+/* Start options */
+.start-options {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+.option-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.option-group label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.option-group input {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    width: 80px;
+    text-align: center;
+    font-family: var(--font-main);
+}
+
+.option-group input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Data table */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.data-table th,
+.data-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Badges */
+.badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.badge-new { background: rgba(43, 149, 214, 0.2); color: #2b95d6; }
+.badge-learning { background: rgba(191, 129, 29, 0.2); color: var(--warning); }
+.badge-review { background: rgba(98, 153, 36, 0.2); color: var(--success); }
+.badge-relearning { background: rgba(204, 51, 51, 0.2); color: var(--danger); }
+
+/* Utility */
+.dim { color: var(--text-secondary); }
+.text-center { text-align: center; }

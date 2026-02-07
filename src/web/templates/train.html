@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Train - Chess Trainer{% endblock %}
+
+{% block content %}
+<div class="training-container">
+    <!-- Pre-session: start controls -->
+    <div id="start-panel" class="panel">
+        <h1>Training Session</h1>
+        <div class="start-options">
+            <div class="option-group">
+                <label for="max-new">New cards</label>
+                <input type="number" id="max-new" value="10" min="0" max="100">
+            </div>
+            <div class="option-group">
+                <label for="max-reviews">Reviews</label>
+                <input type="number" id="max-reviews" value="50" min="0" max="500">
+            </div>
+        </div>
+        <button id="start-btn" class="btn btn-primary btn-large" onclick="startSession()">
+            Start Training
+        </button>
+    </div>
+
+    <!-- Active session -->
+    <div id="session-panel" class="panel" style="display: none;">
+        <div class="exercise-header">
+            <span id="progress-text">Exercise 1</span>
+            <span id="remaining-text" class="dim"></span>
+        </div>
+
+        <div class="board-area">
+            <div id="board" class="board"></div>
+        </div>
+
+        <div id="challenge-text" class="challenge"></div>
+        <div id="feedback-area" class="feedback" style="display: none;"></div>
+
+        <!-- Rating panel (shown after exercise complete) -->
+        <div id="rating-panel" class="rating-panel" style="display: none;">
+            <div id="solution-text" class="solution"></div>
+            <div class="rating-buttons">
+                <button class="btn btn-again" onclick="rateExercise(1)">Again</button>
+                <button class="btn btn-hard" onclick="rateExercise(2)">Hard</button>
+                <button class="btn btn-good" onclick="rateExercise(3)">Good</button>
+                <button class="btn btn-easy" onclick="rateExercise(4)">Easy</button>
+            </div>
+            <div id="next-review-text" class="dim" style="display: none;"></div>
+        </div>
+
+        <!-- Controls -->
+        <div id="controls" class="controls">
+            <button class="btn btn-secondary" onclick="showSolution()">Show Solution</button>
+            <button class="btn btn-secondary" onclick="endSession()">End Session</button>
+        </div>
+    </div>
+
+    <!-- Session complete -->
+    <div id="complete-panel" class="panel" style="display: none;">
+        <h1>Session Complete</h1>
+        <div class="stats-grid" id="session-stats"></div>
+        <div class="action-panel">
+            <a href="/train" class="btn btn-primary">New Session</a>
+            <a href="/" class="btn btn-secondary">Dashboard</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/training.js"></script>
+{% endblock %}

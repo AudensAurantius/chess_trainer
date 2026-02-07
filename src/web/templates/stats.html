@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Statistics - Chess Trainer{% endblock %}
+
+{% block content %}
+<div class="stats-page">
+    <h1>Statistics</h1>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('exercise_count', 0) }}</div>
+            <div class="stat-label">Total Exercises</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('total_cards', 0) }}</div>
+            <div class="stat-label">Total Cards</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('due_count', 0) }}</div>
+            <div class="stat-label">Due Now</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.get('total_reviews', 0) }}</div>
+            <div class="stat-label">Total Reviews</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ "%.1f"|format(stats.get('average_stability_days', 0)) }}</div>
+            <div class="stat-label">Avg Stability (days)</div>
+        </div>
+    </div>
+
+    {% if stats.get('state_counts') %}
+    <div class="card-states">
+        <h2>Cards by State</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>State</th>
+                    <th>Count</th>
+                    <th>Percentage</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set total = stats.get('total_cards', 1) %}
+                {% for state, count in stats['state_counts'].items() %}
+                <tr>
+                    <td><span class="badge badge-{{ state|lower }}">{{ state }}</span></td>
+                    <td>{{ count }}</td>
+                    <td>{{ "%.1f"|format(count / total * 100) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
