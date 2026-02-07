@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from .. import configure_logging
+from .. import __version__, configure_logging
 from ..config import AppConfig, load_config
 from ..exercises import Exercise, ExerciseType
 from ..importers import LichessPuzzleImporter
@@ -35,9 +35,24 @@ def _get_config() -> AppConfig:
     return _app_config or load_config()
 
 
+def _version_callback(value: bool) -> None:
+    """Print version and exit."""
+    if value:
+        typer.echo(f"chess-trainer {__version__}")
+        raise typer.Exit()
+
+
 @app.callback()
 def _main_callback(
     config: Path | None = typer.Option(None, "--config", "-c", help="Path to config TOML"),
+    version: bool = typer.Option(  # noqa: ARG001
+        False,
+        "--version",
+        "-V",
+        help="Show version and exit",
+        callback=_version_callback,
+        is_eager=True,
+    ),
 ) -> None:
     """Global options applied before any subcommand."""
     global _app_config  # noqa: PLW0603

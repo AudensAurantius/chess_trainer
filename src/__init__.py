@@ -1,9 +1,15 @@
 """Chess trainer package — spaced repetition training for chess improvement."""
 
 import logging
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from rich.logging import RichHandler
+
+try:
+    __version__ = version("chess-trainer")
+except PackageNotFoundError:
+    __version__ = "0.0.0-dev"
 
 SRC_DIR = Path(__file__).parent
 ASSETS = SRC_DIR.parent.joinpath("assets")
