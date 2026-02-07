@@ -348,33 +348,23 @@ class TestInitCardsCommand:
 
     def test_init_cards_creates_cards(self, tmp_path):
         db_path = tmp_path / "test.db"
+        from src.storage import Repository
 
-        # Seed exercises AND create cards directly (testing the happy path output)
-        # Note: init_cards has a cursor-reuse bug in DuckDB where
-        # iterate_all() cursor gets corrupted by card queries in the loop.
-        # We test via mocking to isolate the CLI behavior.
-        mock_exercises = [
-            TacticExercise(
-                id=f"init:t{i}",
-                fen=SCHOLARS_FEN,
-                tags=[],
-                source="test",
-                solution=["g7g6"],
-            )
-            for i in range(3)
-        ]
+        # Seed exercises
+        with Repository(db_path) as repo:
+            for i in range(3):
+                ex = TacticExercise(
+                    id=f"init:t{i}",
+                    fen=SCHOLARS_FEN,
+                    tags=[],
+                    source="test",
+                    solution=["g7g6"],
+                )
+                repo.exercises.add(ex)
 
-        with patch("src.cli.app.get_repo") as mock_get_repo:
-            mock_repo = MagicMock()
-            mock_repo.__enter__ = MagicMock(return_value=mock_repo)
-            mock_repo.__exit__ = MagicMock(return_value=False)
-            mock_repo.exercises.iterate_all.return_value = iter(mock_exercises)
-            mock_repo.cards.get.return_value = None  # No existing cards
-            mock_get_repo.return_value = mock_repo
-
-            result = runner.invoke(app, ["init-cards", "--db", str(db_path)])
-            assert result.exit_code == 0
-            assert "3" in result.output
+        result = runner.invoke(app, ["init-cards", "--db", str(db_path)])
+        assert result.exit_code == 0
+        assert "3" in result.output
 
     def test_init_cards_empty_db(self, tmp_path):
         db_path = tmp_path / "test.db"

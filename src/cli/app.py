@@ -449,7 +449,10 @@ def init_cards(
     """Create review cards for all exercises that don't have one."""
     with get_repo(db) as repo:
         created = 0
-        for exercise in repo.exercises.iterate_all():
+        # Materialize the list first to avoid DuckDB cursor corruption
+        # when card queries run inside the loop on the same connection.
+        exercises = list(repo.exercises.iterate_all())
+        for exercise in exercises:
             existing = repo.cards.get(exercise.id)
             if not existing:
                 repo.cards.get_or_create(exercise.id)
