@@ -4,3 +4,19 @@ __pycache__
 *.sqlite
 *.egg-info/
 data
+
+# Virtual environments
+.venv/
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+
+# Tooling
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
