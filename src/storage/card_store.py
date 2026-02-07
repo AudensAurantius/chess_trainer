@@ -43,9 +43,15 @@ class CardStore:
 
     def save(self, card: ReviewCard) -> None:
         """Save (insert or update) a review card."""
+        # Use DELETE + INSERT to work around DuckDB INSERT OR REPLACE
+        # not fully updating all columns when foreign keys are present.
+        self.conn.execute(
+            "DELETE FROM review_cards WHERE exercise_id = ?",
+            [card.exercise_id],
+        )
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO review_cards (
+            INSERT INTO review_cards (
                 exercise_id, state, difficulty, stability, retrievability,
                 due, last_review, reps, lapses, step_index, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
