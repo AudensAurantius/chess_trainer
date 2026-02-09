@@ -64,6 +64,17 @@ class WebConfig:
 
 
 @dataclass
+class EngineConfig:
+    """UCI engine settings."""
+
+    path: str | None = None  # Auto-detect if None
+    hash_mb: int = 256
+    threads: int = 2
+    default_depth: int = 20
+    default_multipv: int = 3
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -73,6 +84,7 @@ class AppConfig:
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    engine: EngineConfig = field(default_factory=EngineConfig)
 
 
 def _apply_toml(config: AppConfig, data: dict) -> None:
@@ -121,6 +133,19 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "port" in web:
             config.web.port = int(web["port"])
 
+    if "engine" in data:
+        eng = data["engine"]
+        if "path" in eng:
+            config.engine.path = eng["path"]
+        if "hash_mb" in eng:
+            config.engine.hash_mb = int(eng["hash_mb"])
+        if "threads" in eng:
+            config.engine.threads = int(eng["threads"])
+        if "default_depth" in eng:
+            config.engine.default_depth = int(eng["default_depth"])
+        if "default_multipv" in eng:
+            config.engine.default_multipv = int(eng["default_multipv"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -134,6 +159,9 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}WEB_PORT": lambda v: setattr(config.web, "port", int(v)),
         f"{ENV_PREFIX}MAX_NEW_CARDS": lambda v: setattr(config.training, "max_new_cards", int(v)),
         f"{ENV_PREFIX}MAX_REVIEWS": lambda v: setattr(config.training, "max_reviews", int(v)),
+        f"{ENV_PREFIX}ENGINE_PATH": lambda v: setattr(config.engine, "path", v),
+        f"{ENV_PREFIX}ENGINE_HASH_MB": lambda v: setattr(config.engine, "hash_mb", int(v)),
+        f"{ENV_PREFIX}ENGINE_THREADS": lambda v: setattr(config.engine, "threads", int(v)),
     }
     for key, setter in env_map.items():
         val = os.environ.get(key)
@@ -199,4 +227,11 @@ level = "INFO"
 [web]
 host = "127.0.0.1"
 port = 8000
+
+[engine]
+# path = "/usr/games/stockfish"  # Auto-detects if not set
+hash_mb = 256
+threads = 2
+default_depth = 20
+default_multipv = 3
 """
