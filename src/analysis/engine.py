@@ -191,10 +191,12 @@ class EngineManager:
         except chess.engine.EngineTerminatedError as e:
             raise EngineError(f"Engine failed to start: {e}")
 
-        self._engine.configure({
-            "Hash": self._hash_mb,
-            "Threads": self._threads,
-        })
+        self._engine.configure(
+            {
+                "Hash": self._hash_mb,
+                "Threads": self._threads,
+            }
+        )
 
     def close(self) -> None:
         """Stop the engine subprocess."""

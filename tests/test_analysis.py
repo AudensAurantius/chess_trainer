@@ -156,7 +156,9 @@ class TestFindEngine:
 
     @patch("src.analysis.engine.shutil.which")
     def test_finds_stockfish(self, mock_which):
-        mock_which.side_effect = lambda name: "/usr/games/stockfish" if name == "stockfish" else None
+        mock_which.side_effect = lambda name: (
+            "/usr/games/stockfish" if name == "stockfish" else None
+        )
         assert _find_engine() == "/usr/games/stockfish"
 
     @patch("src.analysis.engine.shutil.which")
@@ -678,7 +680,9 @@ class TestAnalyzeCommand:
         ]
         mock_popen.return_value = mock_engine
 
-        result = runner.invoke(app, ["analyze", "--engine", "/usr/games/stockfish", "--depth", "10"])
+        result = runner.invoke(
+            app, ["analyze", "--engine", "/usr/games/stockfish", "--depth", "10"]
+        )
         assert result.exit_code == 0
         assert "Analysis" in result.output
 

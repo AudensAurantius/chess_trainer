@@ -607,9 +607,7 @@ def _interactive_analysis(board: chess.Board, engine_mgr) -> None:
 
         _static_analysis(board, result, flipped=flipped)
 
-        console.print(
-            "\n[dim]Enter a move (SAN/UCI), 'back' to undo, 'quit' to exit:[/dim]"
-        )
+        console.print("\n[dim]Enter a move (SAN/UCI), 'back' to undo, 'quit' to exit:[/dim]")
         text = input("> ").strip()
 
         if text.lower() in ("q", "quit", "exit"):
@@ -638,9 +636,15 @@ def analyze(
     fen: str = typer.Argument(None, help="FEN string to analyze (starting position if omitted)"),
     pgn: str = typer.Option(None, "--pgn", help="PGN string or file path to analyze"),
     depth: int | None = typer.Option(None, "--depth", "-d", help="Search depth"),
-    multipv: int | None = typer.Option(None, "--multipv", "-m", help="Number of principal variations"),
-    engine_path: str | None = typer.Option(None, "--engine", "-e", help="Path to UCI engine binary"),
-    interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive exploration mode"),
+    multipv: int | None = typer.Option(
+        None, "--multipv", "-m", help="Number of principal variations"
+    ),
+    engine_path: str | None = typer.Option(
+        None, "--engine", "-e", help="Path to UCI engine binary"
+    ),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Interactive exploration mode"
+    ),
 ):
     """Analyze a chess position with a UCI engine."""
     from ..analysis import EngineError, EngineManager
@@ -675,9 +679,7 @@ def analyze(
             if interactive:
                 _interactive_analysis(board, engine_mgr)
             else:
-                result = engine_mgr.analyze(
-                    board, depth=analysis_depth, multipv=analysis_multipv
-                )
+                result = engine_mgr.analyze(board, depth=analysis_depth, multipv=analysis_multipv)
                 flipped = board.turn == chess.BLACK
                 _static_analysis(board, result, flipped=flipped)
     except EngineError as e:
