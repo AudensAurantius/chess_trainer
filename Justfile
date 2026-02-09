@@ -165,6 +165,18 @@ book-sync *args:
 book-train *args:
     uv run {{ project_name }} book train {{ args }}
 
+# ─── tablebase ───────────────────────────────────────────────────────────────
+
+[group: 'tablebase']
+[doc('Probe a FEN position in the endgame tablebase')]
+tablebase fen *args:
+    uv run {{ project_name }} tablebase "{{ fen }}" {{ args }}
+
+[group: 'tablebase']
+[doc('Interactive tablebase explorer')]
+tablebase-interactive fen="" *args:
+    uv run {{ project_name }} tablebase {{ if fen != "" { '"' + fen + '"' } else { "" } }} --interactive {{ args }}
+
 # ─── config ───────────────────────────────────────────────────────────────────
 
 [group: 'config']

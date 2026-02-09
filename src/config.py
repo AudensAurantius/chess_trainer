@@ -94,6 +94,15 @@ class GameAnalysisConfig:
 
 
 @dataclass
+class TablebaseConfig:
+    """Endgame tablebase settings."""
+
+    syzygy_path: str | None = None  # Path to Syzygy tablebase directory
+    use_lichess_fallback: bool = True  # Fall back to Lichess API
+    max_pieces: int = 7  # Max pieces for tablebase probe
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -106,6 +115,7 @@ class AppConfig:
     engine: EngineConfig = field(default_factory=EngineConfig)
     openings: OpeningsConfig = field(default_factory=OpeningsConfig)
     game_analysis: GameAnalysisConfig = field(default_factory=GameAnalysisConfig)
+    tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
 
 
 def _apply_toml(config: AppConfig, data: dict) -> None:
@@ -187,6 +197,15 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "skip_first_plies" in ga:
             config.game_analysis.skip_first_plies = int(ga["skip_first_plies"])
 
+    if "tablebase" in data:
+        tb = data["tablebase"]
+        if "syzygy_path" in tb:
+            config.tablebase.syzygy_path = str(Path(tb["syzygy_path"]).expanduser())
+        if "use_lichess_fallback" in tb:
+            config.tablebase.use_lichess_fallback = bool(tb["use_lichess_fallback"])
+        if "max_pieces" in tb:
+            config.tablebase.max_pieces = int(tb["max_pieces"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -219,6 +238,13 @@ def _apply_env(config: AppConfig) -> None:
         ),
         f"{ENV_PREFIX}GAME_SKIP_PLIES": lambda v: setattr(
             config.game_analysis, "skip_first_plies", int(v)
+        ),
+        f"{ENV_PREFIX}TABLEBASE_SYZYGY_PATH": lambda v: setattr(config.tablebase, "syzygy_path", v),
+        f"{ENV_PREFIX}TABLEBASE_USE_LICHESS": lambda v: setattr(
+            config.tablebase, "use_lichess_fallback", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}TABLEBASE_MAX_PIECES": lambda v: setattr(
+            config.tablebase, "max_pieces", int(v)
         ),
     }
     for key, setter in env_map.items():
@@ -303,4 +329,9 @@ analysis_depth = 20          # Engine depth for game analysis
 min_classification = "MISTAKE"  # INACCURACY, MISTAKE, or BLUNDER
 max_exercises_per_game = 10  # Max exercises generated per game
 skip_first_plies = 6         # Skip opening theory moves
+
+[tablebase]
+# syzygy_path = "/path/to/syzygy"  # Local Syzygy tablebase files
+use_lichess_fallback = true         # Fall back to Lichess API
+max_pieces = 7                      # Max pieces for tablebase probe
 """

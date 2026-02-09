@@ -508,7 +508,10 @@ def config_show() -> None:
             f"[bold]game_analysis.analysis_depth[/bold] = {cfg.game_analysis.analysis_depth}\n"
             f"[bold]game_analysis.min_classification[/bold] = {cfg.game_analysis.min_classification}\n"
             f"[bold]game_analysis.max_exercises_per_game[/bold] = {cfg.game_analysis.max_exercises_per_game}\n"
-            f"[bold]game_analysis.skip_first_plies[/bold] = {cfg.game_analysis.skip_first_plies}",
+            f"[bold]game_analysis.skip_first_plies[/bold] = {cfg.game_analysis.skip_first_plies}\n"
+            f"[bold]tablebase.syzygy_path[/bold] = {cfg.tablebase.syzygy_path or '(not set)'}\n"
+            f"[bold]tablebase.use_lichess_fallback[/bold] = {cfg.tablebase.use_lichess_fallback}\n"
+            f"[bold]tablebase.max_pieces[/bold] = {cfg.tablebase.max_pieces}",
             title="Effective Configuration",
         )
     )
@@ -1338,6 +1341,173 @@ def _parse_date_to_ms(date_str: str) -> int:
         return int(dt.timestamp() * 1000)
     except ValueError:
         return 0
+
+
+@app.command()
+def tablebase(
+    fen: str = typer.Argument(None, help="FEN string to probe"),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Interactive exploration mode"
+    ),
+    syzygy_path: str | None = typer.Option(None, "--syzygy", help="Path to Syzygy tablebase files"),
+):
+    """Probe endgame tablebases for a position."""
+    from ..tablebase import TablebaseError, TablebaseManager
+
+    cfg = _get_config()
+    tb_path = syzygy_path or cfg.tablebase.syzygy_path
+
+    if not fen and not interactive:
+        console.print("[red]Provide a FEN string or use --interactive.[/red]")
+        raise typer.Exit(1)
+
+    # Build initial board
+    if fen:
+        try:
+            board = chess.Board(fen)
+        except ValueError:
+            console.print(f"[red]Invalid FEN: {fen}[/red]")
+            raise typer.Exit(1)
+    else:
+        board = chess.Board()
+
+    try:
+        with TablebaseManager(
+            syzygy_path=tb_path,
+            use_lichess_fallback=cfg.tablebase.use_lichess_fallback,
+            max_pieces=cfg.tablebase.max_pieces,
+        ) as tb_mgr:
+            if interactive:
+                _interactive_tablebase(board, tb_mgr)
+            else:
+                _static_tablebase(board, tb_mgr)
+    except TablebaseError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+
+def _piece_description(board: chess.Board) -> str:
+    """Generate a short piece description like 'KPK'."""
+    piece_names = {
+        chess.KING: "K",
+        chess.QUEEN: "Q",
+        chess.ROOK: "R",
+        chess.BISHOP: "B",
+        chess.KNIGHT: "N",
+        chess.PAWN: "P",
+    }
+    white_pieces = ""
+    black_pieces = ""
+    for piece_type in [chess.KING, chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT, chess.PAWN]:
+        white_count = len(board.pieces(piece_type, chess.WHITE))
+        black_count = len(board.pieces(piece_type, chess.BLACK))
+        white_pieces += piece_names[piece_type] * white_count
+        black_pieces += piece_names[piece_type] * black_count
+    return f"{white_pieces}v{black_pieces}"
+
+
+def _wdl_style(wdl: int) -> str:
+    """Get Rich style string for a WDL value."""
+    if wdl >= 2:
+        return "green bold"
+    elif wdl == 1:
+        return "green"
+    elif wdl == 0:
+        return "yellow"
+    elif wdl == -1:
+        return "red"
+    else:
+        return "red bold"
+
+
+def _static_tablebase(board: chess.Board, tb_mgr) -> None:
+    """Display tablebase probe results."""
+    from ..tablebase import TablebaseError
+
+    flipped = board.turn == chess.BLACK
+    console.print(render_board(board, flipped=flipped))
+    console.print()
+
+    try:
+        result = tb_mgr.probe(board)
+    except TablebaseError as e:
+        console.print(f"[red]{e}[/red]")
+        return
+
+    pieces = _piece_description(board)
+    side = "White" if board.turn == chess.WHITE else "Black"
+    style = _wdl_style(result.wdl)
+    dtz_str = f" (DTZ: {result.dtz})" if result.dtz is not None else ""
+
+    console.print(f"[bold]{pieces}[/bold] ({side} to move)")
+    console.print(f"Result: [{style}]{result.category.upper()}{dtz_str}[/{style}]")
+
+    if result.checkmate:
+        console.print("[red bold]Checkmate![/red bold]")
+        return
+    if result.stalemate:
+        console.print("[yellow]Stalemate![/yellow]")
+        return
+
+    if result.moves:
+        console.print()
+        table = Table(title="Moves")
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Move", style="bold", width=8)
+        table.add_column("Result", width=14)
+        table.add_column("DTZ", justify="right", width=6)
+
+        for i, m in enumerate(result.moves, 1):
+            move_style = _wdl_style(m.wdl)
+            dtz_val = str(m.dtz) if m.dtz is not None else "-"
+            flags = ""
+            if m.checkmate:
+                flags = " #"
+            elif m.zeroing:
+                flags = " *"
+            table.add_row(
+                str(i),
+                m.san,
+                f"[{move_style}]{m.category.upper()}[/{move_style}]",
+                dtz_val + flags,
+            )
+
+        console.print(table)
+        console.print("[dim]* = zeroing move (capture/pawn), # = checkmate[/dim]")
+
+
+def _interactive_tablebase(board: chess.Board, tb_mgr) -> None:
+    """Interactive tablebase REPL: play moves, probe each position."""
+    move_stack: list[chess.Move] = []
+
+    while True:
+        _static_tablebase(board, tb_mgr)
+
+        console.print("\n[dim]Enter a move (SAN/UCI), 'back' to undo, 'quit' to exit:[/dim]")
+        text = input("> ").strip()
+
+        if text.lower() in ("q", "quit", "exit"):
+            break
+        elif text.lower() in ("b", "back", "undo"):
+            if move_stack:
+                board.pop()
+                move_stack.pop()
+                console.print("[dim]Move undone.[/dim]\n")
+            else:
+                console.print("[yellow]No moves to undo.[/yellow]\n")
+            continue
+        elif text.lower() in ("f", "fen"):
+            console.print(f"[dim]{board.fen()}[/dim]\n")
+            continue
+
+        move = _parse_move(board, text)
+        if move is None:
+            console.print("[red]Invalid move. Try again.[/red]\n")
+            continue
+
+        board.push(move)
+        move_stack.append(move)
+        console.print()
 
 
 @app.command()
