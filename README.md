@@ -238,6 +238,10 @@ This project was designed and implemented with assistance from Claude (Anthropic
 - ~760 tests with ~90% code coverage serve as quality assurance
 - See `DESIGN_REVIEW.md` for architectural rationale
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding standards, and how to submit changes.
+
 ## License
 
 [MIT](LICENSE)
