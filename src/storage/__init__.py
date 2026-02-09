@@ -5,10 +5,12 @@ Uses DuckDB for efficient embedded storage of exercises and review state.
 
 from .card_store import CardStore
 from .exercise_store import ExerciseStore
+from .opening_store import OpeningStore
 from .repository import Repository
 
 __all__ = [
     "Repository",
     "ExerciseStore",
     "CardStore",
+    "OpeningStore",
 ]

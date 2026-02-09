@@ -75,6 +75,15 @@ class EngineConfig:
 
 
 @dataclass
+class OpeningsConfig:
+    """Opening explorer and book settings."""
+
+    explorer_source: str = "lichess"
+    cache_ttl_hours: int = 168
+    min_games: int = 5
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -85,6 +94,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     web: WebConfig = field(default_factory=WebConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
+    openings: OpeningsConfig = field(default_factory=OpeningsConfig)
 
 
 def _apply_toml(config: AppConfig, data: dict) -> None:
@@ -146,6 +156,15 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "default_multipv" in eng:
             config.engine.default_multipv = int(eng["default_multipv"])
 
+    if "openings" in data:
+        op = data["openings"]
+        if "explorer_source" in op:
+            config.openings.explorer_source = op["explorer_source"]
+        if "cache_ttl_hours" in op:
+            config.openings.cache_ttl_hours = int(op["cache_ttl_hours"])
+        if "min_games" in op:
+            config.openings.min_games = int(op["min_games"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -162,6 +181,11 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}ENGINE_PATH": lambda v: setattr(config.engine, "path", v),
         f"{ENV_PREFIX}ENGINE_HASH_MB": lambda v: setattr(config.engine, "hash_mb", int(v)),
         f"{ENV_PREFIX}ENGINE_THREADS": lambda v: setattr(config.engine, "threads", int(v)),
+        f"{ENV_PREFIX}OPENINGS_SOURCE": lambda v: setattr(config.openings, "explorer_source", v),
+        f"{ENV_PREFIX}OPENINGS_CACHE_TTL": lambda v: setattr(
+            config.openings, "cache_ttl_hours", int(v)
+        ),
+        f"{ENV_PREFIX}OPENINGS_MIN_GAMES": lambda v: setattr(config.openings, "min_games", int(v)),
     }
     for key, setter in env_map.items():
         val = os.environ.get(key)
@@ -234,4 +258,9 @@ hash_mb = 256
 threads = 2
 default_depth = 20
 default_multipv = 3
+
+[openings]
+explorer_source = "lichess"  # lichess, masters, or player
+cache_ttl_hours = 168        # 1 week
+min_games = 5                # Minimum games to show a move
 """

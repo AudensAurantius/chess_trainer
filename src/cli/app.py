@@ -501,7 +501,10 @@ def config_show() -> None:
             f"[bold]engine.hash_mb[/bold] = {cfg.engine.hash_mb}\n"
             f"[bold]engine.threads[/bold] = {cfg.engine.threads}\n"
             f"[bold]engine.default_depth[/bold] = {cfg.engine.default_depth}\n"
-            f"[bold]engine.default_multipv[/bold] = {cfg.engine.default_multipv}",
+            f"[bold]engine.default_multipv[/bold] = {cfg.engine.default_multipv}\n"
+            f"[bold]openings.explorer_source[/bold] = {cfg.openings.explorer_source}\n"
+            f"[bold]openings.cache_ttl_hours[/bold] = {cfg.openings.cache_ttl_hours}\n"
+            f"[bold]openings.min_games[/bold] = {cfg.openings.min_games}",
             title="Effective Configuration",
         )
     )
@@ -685,6 +688,357 @@ def analyze(
     except EngineError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+
+
+@app.command()
+def explore(
+    fen: str = typer.Argument(None, help="FEN to explore (starting position if omitted)"),
+    source: str = typer.Option(
+        None, "--source", "-s", help="Explorer source: lichess, masters, player"
+    ),
+    player: str | None = typer.Option(
+        None, "--player", "-p", help="Lichess username (for player source)"
+    ),
+    color: str = typer.Option("white", "--color", help="Side for player source"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Explore opening statistics from the Lichess explorer."""
+    from ..openings.explorer import OpeningExplorer
+    from ..openings.models import ExplorerSource
+
+    cfg = _get_config()
+    source_str = source or cfg.openings.explorer_source
+    try:
+        explorer_source = ExplorerSource(source_str)
+    except ValueError:
+        console.print(f"[red]Unknown source: {source_str}. Use lichess, masters, or player.[/red]")
+        raise typer.Exit(1)
+
+    board = chess.Board()
+    if fen:
+        try:
+            board = chess.Board(fen)
+        except ValueError:
+            console.print(f"[red]Invalid FEN: {fen}[/red]")
+            raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        explorer = OpeningExplorer(
+            repo.openings,
+            cache_ttl_hours=cfg.openings.cache_ttl_hours,
+            min_games=cfg.openings.min_games,
+        )
+        _interactive_explore(board, explorer, explorer_source, player=player, color=color)
+
+
+def _interactive_explore(
+    board: chess.Board,
+    explorer,
+    source,
+    *,
+    player: str | None = None,
+    color: str = "white",
+) -> None:
+    """Interactive explorer REPL: view stats, play moves to go deeper."""
+    from ..openings.explorer import ExplorerError
+    from .board import render_board
+
+    move_stack: list[chess.Move] = []
+
+    while True:
+        flipped = board.turn == chess.BLACK
+
+        try:
+            result = explorer.explore(board.fen(), source, player=player, color=color)
+        except ExplorerError as e:
+            console.print(f"[red]Explorer error: {e}[/red]")
+            break
+
+        # Display board
+        console.print(render_board(board, flipped=flipped))
+        console.print()
+
+        # Show opening name if available
+        if result.opening_name:
+            eco = f" ({result.opening_eco})" if result.opening_eco else ""
+            console.print(f"[bold]{result.opening_name}{eco}[/bold]")
+
+        if result.total_games > 0:
+            console.print(f"[dim]{result.total_games:,} games[/dim]")
+
+        # Build move stats table
+        if result.moves:
+            table = Table(title="Move Statistics")
+            table.add_column("Move", style="bold")
+            table.add_column("Games", justify="right")
+            table.add_column("White", justify="right", style="green")
+            table.add_column("Draw", justify="right", style="yellow")
+            table.add_column("Black", justify="right", style="red")
+            table.add_column("Avg Elo", justify="right", style="dim")
+
+            for m in result.moves:
+                table.add_row(
+                    m.san,
+                    f"{m.total_games:,}",
+                    f"{m.white_pct:.0f}%",
+                    f"{m.draw_pct:.0f}%",
+                    f"{m.black_pct:.0f}%",
+                    str(m.average_rating) if m.average_rating else "-",
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No moves found in database.[/yellow]")
+
+        # Prompt for input
+        console.print("\n[dim]Enter a move (SAN/UCI), 'back' to undo, 'quit' to exit:[/dim]")
+        text = input("> ").strip()
+
+        if text.lower() in ("q", "quit", "exit"):
+            break
+        elif text.lower() in ("b", "back", "undo"):
+            if move_stack:
+                board.pop()
+                move_stack.pop()
+                console.print("[dim]Move undone.[/dim]\n")
+            else:
+                console.print("[yellow]No moves to undo.[/yellow]\n")
+            continue
+
+        move = _parse_move(board, text)
+        if move is None:
+            console.print("[red]Invalid move. Try again.[/red]\n")
+            continue
+
+        board.push(move)
+        move_stack.append(move)
+        console.print()
+
+
+# ── Book subcommand group ─────────────────────────────────────────────────────
+
+book_app = typer.Typer(help="Personal opening book management")
+app.add_typer(book_app, name="book")
+
+
+@book_app.command("add")
+def book_add(
+    pgn: str = typer.Option(..., "--pgn", help='PGN moves (e.g. "1.e4 e5 2.Nf3 Nc6")'),
+    color: str = typer.Option(..., "--color", help="Side: white or black"),
+    name: str = typer.Option("", "--name", "-n", help="Opening name"),
+    variation: str = typer.Option("", "--variation", "-v", help="Variation name"),
+    eco: str = typer.Option("", "--eco", help="ECO code"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Add a new opening line to your book."""
+    from ..openings.book import BookError, create_line, parse_pgn_to_uci
+    from ..openings.models import BookColor
+
+    try:
+        book_color = BookColor(color.lower())
+    except ValueError:
+        console.print(f"[red]Invalid color: {color}. Use 'white' or 'black'.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        uci_moves = parse_pgn_to_uci(pgn)
+    except BookError as e:
+        console.print(f"[red]PGN error: {e}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        line = create_line(book_color, uci_moves, name=name, variation=variation, eco_code=eco)
+    except BookError as e:
+        console.print(f"[red]Error creating line: {e}[/red]")
+        raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        repo.openings.add_line(line)
+
+    console.print(f"[green]\u2713[/green] Added line: {line.san_line}")
+    console.print(f"  ID: {line.id}")
+    if name:
+        console.print(f"  Name: {name}")
+
+
+@book_app.command("list")
+def book_list(
+    color: str | None = typer.Option(None, "--color", help="Filter by side: white or black"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """List opening lines in your book."""
+    from ..openings.models import BookColor
+
+    book_color = None
+    if color:
+        try:
+            book_color = BookColor(color.lower())
+        except ValueError:
+            console.print(f"[red]Invalid color: {color}. Use 'white' or 'black'.[/red]")
+            raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        lines = repo.openings.list_lines(color=book_color)
+
+        if not lines:
+            console.print("[yellow]No lines in your opening book.[/yellow]")
+            console.print(
+                "Add one with: chess-trainer book add --pgn '1.e4 e5' --color white --name 'Open Game'"
+            )
+            return
+
+        table = Table(title=f"Opening Book ({len(lines)} lines)")
+        table.add_column("ID", style="dim")
+        table.add_column("Color", style="bold")
+        table.add_column("Name")
+        table.add_column("Variation")
+        table.add_column("ECO", style="dim")
+        table.add_column("Moves", justify="right")
+        table.add_column("Line")
+
+        for line in lines:
+            table.add_row(
+                line.id,
+                line.color.value,
+                line.name or "-",
+                line.variation or "-",
+                line.eco_code or "-",
+                str(len(line.moves)),
+                line.san_line[:40] + ("..." if len(line.san_line) > 40 else ""),
+            )
+
+        console.print(table)
+
+
+@book_app.command("delete")
+def book_delete(
+    line_id: str = typer.Argument(help="ID of the line to delete"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Delete an opening line from your book."""
+    with get_repo(db) as repo:
+        deleted = repo.openings.delete_line(line_id)
+        if deleted:
+            console.print(f"[green]\u2713[/green] Deleted line {line_id}")
+        else:
+            console.print(f"[red]Line not found: {line_id}[/red]")
+            raise typer.Exit(1)
+
+
+@book_app.command("import-pgn")
+def book_import_pgn(
+    filepath: str = typer.Argument(help="Path to PGN file"),
+    color: str = typer.Option(..., "--color", help="Side: white or black"),
+    name: str = typer.Option("", "--name", "-n", help="Opening name for all imported lines"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import opening lines from a PGN file."""
+    from ..openings.book import BookError, create_line, parse_pgn_file
+    from ..openings.models import BookColor
+
+    try:
+        book_color = BookColor(color.lower())
+    except ValueError:
+        console.print(f"[red]Invalid color: {color}. Use 'white' or 'black'.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        games = parse_pgn_file(filepath)
+    except BookError as e:
+        console.print(f"[red]Import error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not games:
+        console.print("[yellow]No games found in file.[/yellow]")
+        return
+
+    with get_repo(db) as repo:
+        added = 0
+        for game_moves in games:
+            try:
+                line = create_line(book_color, game_moves, name=name)
+                repo.openings.add_line(line)
+                added += 1
+            except (BookError, Exception) as e:
+                console.print(f"[yellow]Skipping game: {e}[/yellow]")
+
+    console.print(f"[green]\u2713[/green] Imported {added}/{len(games)} lines")
+
+
+@book_app.command("sync")
+def book_sync(
+    with_explorer: bool = typer.Option(
+        False, "--with-explorer", help="Fetch alternative moves from explorer"
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Sync opening book lines into training exercises."""
+    from ..openings.book import generate_exercises, get_alternatives_from_explorer
+    from ..openings.explorer import OpeningExplorer
+
+    cfg = _get_config()
+
+    with get_repo(db) as repo:
+        lines = repo.openings.list_lines()
+
+        if not lines:
+            console.print("[yellow]No lines in your opening book. Add some first.[/yellow]")
+            return
+
+        # Collect expected exercise IDs
+        expected_ids: set[str] = set()
+        exercises_to_add = []
+
+        explorer = None
+        if with_explorer:
+            explorer = OpeningExplorer(
+                repo.openings,
+                cache_ttl_hours=cfg.openings.cache_ttl_hours,
+                min_games=cfg.openings.min_games,
+            )
+
+        for line in lines:
+            alternatives = None
+            if explorer:
+                with console.status(f"Fetching alternatives for {line.name or line.id}..."):
+                    alternatives = get_alternatives_from_explorer(
+                        line, explorer, min_games=cfg.openings.min_games
+                    )
+
+            for exercise in generate_exercises(line, alternatives):
+                expected_ids.add(exercise.id)
+                exercises_to_add.append(exercise)
+
+        # Delete stale book exercises
+        existing_book = repo.exercises.search(source="book")
+        stale = [e for e in existing_book if e.id not in expected_ids]
+        for ex in stale:
+            repo.cards.delete(ex.id)
+            repo.exercises.delete(ex.id)
+
+        # Add new exercises
+        added = 0
+        for exercise in exercises_to_add:
+            existing = repo.exercises.get(exercise.id)
+            if not existing:
+                repo.exercises.add(exercise)
+                repo.cards.get_or_create(exercise.id)
+                added += 1
+
+        console.print(
+            f"[green]\u2713[/green] Synced: {added} new exercises, "
+            f"{len(stale)} stale removed, "
+            f"{len(expected_ids)} total"
+        )
+
+
+@book_app.command("train")
+def book_train(
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Start a training session with opening exercises."""
+    # Delegate to the main train command with --type OPENING
+    train(exercise_type="OPENING", db=db)
 
 
 @app.command()

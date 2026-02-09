@@ -8,6 +8,7 @@ import duckdb
 if TYPE_CHECKING:
     from .card_store import CardStore
     from .exercise_store import ExerciseStore
+    from .opening_store import OpeningStore
 
 
 class Repository:
@@ -26,6 +27,7 @@ class Repository:
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._exercises: ExerciseStore | None = None
         self._cards: CardStore | None = None
+        self._openings: OpeningStore | None = None
 
     @property
     def conn(self) -> duckdb.DuckDBPyConnection:
@@ -56,6 +58,15 @@ class Repository:
 
             self._cards = CardStore(self.conn)
         return self._cards
+
+    @property
+    def openings(self) -> "OpeningStore":
+        """Get opening store."""
+        if self._openings is None:
+            from .opening_store import OpeningStore
+
+            self._openings = OpeningStore(self.conn)
+        return self._openings
 
     def _init_schema(self) -> None:
         """Initialize database schema."""
@@ -119,6 +130,40 @@ class Repository:
             CREATE INDEX IF NOT EXISTS idx_exercises_type ON exercises(exercise_type)
         """)
 
+        # Opening book tables
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS opening_lines (
+                id VARCHAR PRIMARY KEY,
+                color VARCHAR NOT NULL,
+                eco_code VARCHAR,
+                name VARCHAR,
+                variation VARCHAR,
+                moves JSON NOT NULL,
+                annotations JSON,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS explorer_cache (
+                cache_key VARCHAR PRIMARY KEY,
+                fen VARCHAR NOT NULL,
+                source VARCHAR NOT NULL,
+                response_json JSON NOT NULL,
+                fetched_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_opening_lines_color
+            ON opening_lines(color)
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_explorer_cache_fetched
+            ON explorer_cache(fetched_at)
+        """)
+
     def close(self) -> None:
         """Close database connection."""
         if self._conn:
@@ -126,6 +171,7 @@ class Repository:
             self._conn = None
             self._exercises = None
             self._cards = None
+            self._openings = None
 
     def __enter__(self) -> "Repository":
         """Context manager entry."""

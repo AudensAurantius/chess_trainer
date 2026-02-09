@@ -114,6 +114,35 @@ analyze fen="" depth=default_depth multipv=default_multipv *args:
 analyze-interactive fen="" *args:
     uv run {{ project_name }} analyze {{ if fen != "" { '"' + fen + '"' } else { "" } }} --interactive {{ args }}
 
+# ─── explore ─────────────────────────────────────────────────────────────────
+
+[group: 'explore']
+[doc('Explore opening statistics interactively')]
+explore fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} {{ args }}
+
+# ─── book ────────────────────────────────────────────────────────────────────
+
+[group: 'book']
+[doc('Add an opening line to your book')]
+book-add pgn color *args:
+    uv run {{ project_name }} book add --pgn "{{ pgn }}" --color {{ color }} {{ args }}
+
+[group: 'book']
+[doc('List opening lines in your book')]
+book-list *args:
+    uv run {{ project_name }} book list {{ args }}
+
+[group: 'book']
+[doc('Sync book lines into training exercises')]
+book-sync *args:
+    uv run {{ project_name }} book sync {{ args }}
+
+[group: 'book']
+[doc('Start a training session with opening exercises')]
+book-train *args:
+    uv run {{ project_name }} book train {{ args }}
+
 # ─── config ───────────────────────────────────────────────────────────────────
 
 [group: 'config']
