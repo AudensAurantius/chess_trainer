@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.6"]
+build-backend = "uv_build"
 
 [project]
 name = "chess-trainer"
@@ -21,13 +21,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "httpx>=0.27",
-    "ipython>=8.0",
-    "ruff>=0.4",
-]
 web = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
@@ -42,9 +35,18 @@ analysis = [
 [project.scripts]
 chess-trainer = "src.cli.app:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+[tool.uv.build-backend]
+module-name = "src"
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "httpx>=0.27",
+    "ipython>=8.0",
+    "ruff>=0.4",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -11,19 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install ruff
-      - run: ruff check src/ tests/
-      - run: ruff format --check src/ tests/
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group dev
+      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/
 
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -e ".[dev,web]"
-      - run: pytest tests/ -v --tb=short
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group dev --extra web
+      - run: uv run pytest tests/ -v --tb=short

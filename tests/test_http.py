@@ -1,8 +1,7 @@
 """Tests for HTTP utilities, Lichess API client, and constants with mocked requests."""
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, call, mock_open, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from requests import HTTPError, Response
@@ -22,16 +21,15 @@ from src.lichess.api import (
     write_puzzle_history,
 )
 from src.lichess.constants import (
-    PUZZLE_DIFFICULTIES,
     get_difficulty,
     get_puzzle_themes,
     get_valid_theme,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _mock_response(
     content: bytes = b"",
@@ -143,7 +141,7 @@ class TestLoadNdjson:
 
     def test_parses_ndjson_lines(self):
         resp = MagicMock()
-        resp.iter_lines.return_value = [b'{"x":1}', b'{"x":2}', b'[3,4]']
+        resp.iter_lines.return_value = [b'{"x":1}', b'{"x":2}', b"[3,4]"]
         items = list(_load_ndjson(resp))
         assert items == [{"x": 1}, {"x": 2}, [3, 4]]
 
@@ -186,27 +184,21 @@ class TestGetLichess:
     @patch("src.lichess.api.LICHESS_TOKEN", "my-token")
     @patch("src.lichess.api.requests.get")
     def test_auth_includes_token(self, mock_get):
-        mock_get.return_value = _mock_response(
-            content=b'{}', content_type="application/json"
-        )
+        mock_get.return_value = _mock_response(content=b"{}", content_type="application/json")
         get_lichess("endpoint", auth=True)
         _, kwargs = mock_get.call_args
         assert "Bearer my-token" in kwargs["headers"].get("Authorization", "")
 
     @patch("src.lichess.api.requests.get")
     def test_stream_flag_passed(self, mock_get):
-        mock_get.return_value = _mock_response(
-            content=b'{}', content_type="application/json"
-        )
+        mock_get.return_value = _mock_response(content=b"{}", content_type="application/json")
         get_lichess("endpoint", stream=True)
         _, kwargs = mock_get.call_args
         assert kwargs["stream"] is True
 
     @patch("src.lichess.api.requests.get")
     def test_accept_header_passed(self, mock_get):
-        mock_get.return_value = _mock_response(
-            content=b'{}', content_type="application/json"
-        )
+        mock_get.return_value = _mock_response(content=b"{}", content_type="application/json")
         get_lichess("endpoint", accept="application/x-ndjson")
         _, kwargs = mock_get.call_args
         assert kwargs["headers"]["Accept"] == "application/x-ndjson"
@@ -265,7 +257,7 @@ class TestGetRandomPuzzle:
             content=json.dumps(SAMPLE_PUZZLE_JSON).encode(),
             content_type="application/json",
         )
-        result = get_random_puzzle(theme="fork")
+        get_random_puzzle(theme="fork")
         _, kwargs = mock_get.call_args
         assert kwargs["params"]["angle"] == "fork"
 
@@ -276,7 +268,7 @@ class TestGetRandomPuzzle:
             content=json.dumps(SAMPLE_PUZZLE_JSON).encode(),
             content_type="application/json",
         )
-        result = get_random_puzzle(difficulty="normal")
+        get_random_puzzle(difficulty="normal")
         _, kwargs = mock_get.call_args
         assert kwargs["params"]["difficulty"] == "normal"
 
@@ -304,7 +296,7 @@ class TestRandomPuzzles:
         )
         gen = random_puzzles()
         first = next(gen)
-        second = next(gen)
+        next(gen)
         assert first["puzzle"]["id"] == "ABCDE"
         assert mock_get.call_count == 2
 
@@ -471,7 +463,7 @@ class TestGetPuzzleThemes:
             content_type="application/xml",
         )
 
-        themes = get_puzzle_themes(refresh=True)
+        get_puzzle_themes(refresh=True)
         mock_get.assert_called_once()
 
     @patch("src.lichess.constants.PUZZLE_THEMES", {})

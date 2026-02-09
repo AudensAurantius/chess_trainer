@@ -16,36 +16,36 @@ A spaced repetition training system for chess improvement. Import tactical puzzl
 
 ```bash
 # Install
-pip install -e .
+uv sync
 
 # Import some puzzles
-chess-trainer import-puzzles --count 20
+uv run chess-trainer import-puzzles --count 20
 
 # Create review cards
-chess-trainer init-cards
+uv run chess-trainer init-cards
 
 # Start training (CLI)
-chess-trainer train
+uv run chess-trainer train
 
 # Or launch the web interface
-pip install -e ".[web]"
-chess-trainer web
+uv sync --extra web
+uv run chess-trainer web
 # Open http://127.0.0.1:8000
 ```
 
 ## Installation
 
-Requires Python 3.11+.
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Core (CLI only)
-pip install -e .
+uv sync
 
 # With web interface
-pip install -e ".[web]"
+uv sync --extra web
 
 # Development (tests, linting)
-pip install -e ".[dev,web]"
+uv sync --group dev --extra web
 ```
 
 ## CLI Commands
@@ -148,16 +148,16 @@ src/
 
 ```bash
 # Install dev dependencies
-pip install -e ".[dev,web]"
+uv sync --group dev --extra web
 
 # Run tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Lint
-ruff check src/ tests/
+uv run ruff check src/ tests/
 
 # Format
-ruff format src/ tests/
+uv run ruff format src/ tests/
 ```
 
 ## License

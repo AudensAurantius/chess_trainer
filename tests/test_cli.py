@@ -334,9 +334,7 @@ class TestImportPuzzlesCommand:
         )
         mock_importer_cls.return_value = mock_importer
 
-        result = runner.invoke(
-            app, ["import-puzzles", "--theme", "fork", "--db", str(db_path)]
-        )
+        result = runner.invoke(app, ["import-puzzles", "--theme", "fork", "--db", str(db_path)])
         assert result.exit_code == 0
         # Verify themes passed through
         call_kwargs = mock_importer.import_to.call_args
