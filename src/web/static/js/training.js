@@ -12,28 +12,49 @@ async function startSession() {
     const maxNew = parseInt(document.getElementById('max-new').value) || 10;
     const maxReviews = parseInt(document.getElementById('max-reviews').value) || 50;
 
-    const res = await fetch('/api/session/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ max_new: maxNew, max_reviews: maxReviews }),
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/session/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_new: maxNew, max_reviews: maxReviews }),
+        });
 
-    if (data.queue_size === 0) {
-        showFeedback('No cards due for review. Import some puzzles first!', 'info');
-        return;
+        if (!res.ok) {
+            const text = await res.text();
+            console.error('Start session failed:', res.status, text);
+            showStartFeedback('Failed to start session (server error).', 'error');
+            return;
+        }
+
+        const data = await res.json();
+
+        if (data.queue_size === 0) {
+            showStartFeedback('No cards due for review. Import some puzzles first!', 'info');
+            return;
+        }
+
+        document.getElementById('start-panel').style.display = 'none';
+        document.getElementById('session-panel').style.display = 'block';
+
+        loadNextExercise();
+    } catch (error) {
+        console.error('Error starting session:', error);
+        showStartFeedback('Failed to start session: ' + error.message, 'error');
     }
-
-    document.getElementById('start-panel').style.display = 'none';
-    document.getElementById('session-panel').style.display = 'block';
-
-    loadNextExercise();
 }
 
 async function endSession() {
-    const res = await fetch('/api/session/end', { method: 'POST' });
-    const data = await res.json();
-    showSessionComplete(data.stats || {});
+    try {
+        const res = await fetch('/api/session/end', { method: 'POST' });
+        if (!res.ok) {
+            console.error('End session failed:', res.status);
+            return;
+        }
+        const data = await res.json();
+        showSessionComplete(data.stats || {});
+    } catch (error) {
+        console.error('Error ending session:', error);
+    }
 }
 
 // ─── Exercise loading ──────────────────────────────────────────────
@@ -45,48 +66,58 @@ async function loadNextExercise() {
     document.getElementById('rating-panel').style.display = 'none';
     document.getElementById('controls').style.display = 'flex';
 
-    const res = await fetch('/api/session/next');
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/session/next');
+        if (!res.ok) {
+            console.error('Load next exercise failed:', res.status);
+            showFeedback('Failed to load exercise.', 'error');
+            return;
+        }
+        const data = await res.json();
 
-    if (data.status === 'complete') {
-        showSessionComplete(data.stats || {});
-        return;
+        if (data.status === 'complete') {
+            showSessionComplete(data.stats || {});
+            return;
+        }
+
+        // Update header
+        document.getElementById('progress-text').textContent =
+            'Exercise ' + data.exercise_num;
+        document.getElementById('remaining-text').textContent =
+            data.remaining + ' remaining';
+        document.getElementById('challenge-text').textContent = data.challenge;
+
+        // Determine player color from side to move
+        playerColor = data.side_to_move === 'White' ? 'white' : 'black';
+
+        // Initialize chess.js with the position
+        game = new Chess(data.fen);
+
+        // Initialize or update chessboard
+        const boardConfig = {
+            position: data.fen,
+            orientation: playerColor,
+            draggable: true,
+            pieceTheme: '/static/vendor/img/chesspieces/wikipedia/{piece}.png',
+            onDragStart: onDragStart,
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd,
+        };
+
+        if (board === null) {
+            board = Chessboard('board', boardConfig);
+        } else {
+            board.orientation(playerColor);
+            board.position(data.fen, false);
+            // Re-enable dragging
+            board = Chessboard('board', boardConfig);
+        }
+
+        exerciseActive = true;
+    } catch (error) {
+        console.error('Error loading exercise:', error);
+        showFeedback('Failed to load exercise: ' + error.message, 'error');
     }
-
-    // Update header
-    document.getElementById('progress-text').textContent =
-        'Exercise ' + data.exercise_num;
-    document.getElementById('remaining-text').textContent =
-        data.remaining + ' remaining';
-    document.getElementById('challenge-text').textContent = data.challenge;
-
-    // Determine player color from side to move
-    playerColor = data.side_to_move === 'White' ? 'white' : 'black';
-
-    // Initialize chess.js with the position
-    game = new Chess(data.fen);
-
-    // Initialize or update chessboard
-    const boardConfig = {
-        position: data.fen,
-        orientation: playerColor,
-        draggable: true,
-        pieceTheme: '/static/vendor/img/chesspieces/wikipedia/{piece}.png',
-        onDragStart: onDragStart,
-        onDrop: onDrop,
-        onSnapEnd: onSnapEnd,
-    };
-
-    if (board === null) {
-        board = Chessboard('board', boardConfig);
-    } else {
-        board.orientation(playerColor);
-        board.position(data.fen, false);
-        // Re-enable dragging
-        board = Chessboard('board', boardConfig);
-    }
-
-    exerciseActive = true;
 }
 
 // ─── Board interaction ─────────────────────────────────────────────
@@ -127,41 +158,54 @@ async function onDrop(source, target) {
     });
     if (localMove === null) return 'snapback';
 
-    // Submit to server
-    const res = await fetch('/api/session/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ move: moveUci }),
-    });
-    const data = await res.json();
+    try {
+        // Submit to server
+        const res = await fetch('/api/session/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ move: moveUci }),
+        });
 
-    if (!data.valid) {
-        game.undo();
-        return 'snapback';
-    }
+        if (!res.ok) {
+            console.error('Submit move failed:', res.status);
+            game.undo();
+            return 'snapback';
+        }
 
-    if (data.finished) {
-        exerciseActive = false;
+        const data = await res.json();
 
-        if (data.correct) {
-            showFeedback(data.feedback || 'Correct!', 'correct');
-            // If there's an opponent move to animate first
+        if (!data.valid) {
+            game.undo();
+            return 'snapback';
+        }
+
+        if (data.finished) {
+            exerciseActive = false;
+
+            if (data.correct) {
+                showFeedback(data.feedback || 'Correct!', 'correct');
+                // If there's an opponent move to animate first
+                if (data.opponent_move) {
+                    await animateOpponentMove(data.opponent_move);
+                }
+            } else {
+                showFeedback(data.feedback || 'Incorrect.', 'wrong');
+            }
+
+            // Show solution and rating panel
+            await showSolutionAndRate();
+        } else {
+            // Correct but more moves needed
+            showFeedback(data.feedback || 'Correct! Keep going...', 'correct');
+
             if (data.opponent_move) {
                 await animateOpponentMove(data.opponent_move);
             }
-        } else {
-            showFeedback(data.feedback || 'Incorrect.', 'wrong');
         }
-
-        // Show solution and rating panel
-        await showSolutionAndRate();
-    } else {
-        // Correct but more moves needed
-        showFeedback(data.feedback || 'Correct! Keep going...', 'correct');
-
-        if (data.opponent_move) {
-            await animateOpponentMove(data.opponent_move);
-        }
+    } catch (error) {
+        console.error('Error submitting move:', error);
+        game.undo();
+        return 'snapback';
     }
 }
 
@@ -189,23 +233,31 @@ async function showSolution() {
 }
 
 async function showSolutionAndRate() {
-    const res = await fetch('/api/session/solution');
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/session/solution');
+        if (!res.ok) {
+            console.error('Get solution failed:', res.status);
+            return;
+        }
+        const data = await res.json();
 
-    if (data.solution_san) {
-        document.getElementById('solution-text').textContent =
-            'Solution: ' + data.solution_san;
+        if (data.solution_san) {
+            document.getElementById('solution-text').textContent =
+                'Solution: ' + data.solution_san;
+        }
+
+        // Animate to final position
+        if (data.final_fen) {
+            game = new Chess(data.final_fen);
+            board.position(data.final_fen, true);
+        }
+
+        document.getElementById('rating-panel').style.display = 'block';
+        document.getElementById('controls').style.display = 'none';
+        awaitingRating = true;
+    } catch (error) {
+        console.error('Error getting solution:', error);
     }
-
-    // Animate to final position
-    if (data.final_fen) {
-        game = new Chess(data.final_fen);
-        board.position(data.final_fen, true);
-    }
-
-    document.getElementById('rating-panel').style.display = 'block';
-    document.getElementById('controls').style.display = 'none';
-    awaitingRating = true;
 }
 
 async function rateExercise(rating) {
@@ -216,22 +268,36 @@ async function rateExercise(rating) {
     const buttons = document.querySelectorAll('.rating-buttons .btn');
     buttons.forEach(b => b.disabled = true);
 
-    const res = await fetch('/api/session/rate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating: rating }),
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch('/api/session/rate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating: rating }),
+        });
 
-    // Show next review time briefly
-    const nextText = document.getElementById('next-review-text');
-    nextText.textContent = 'Next review: ' + data.next_review;
-    nextText.style.display = 'block';
+        if (!res.ok) {
+            console.error('Rate exercise failed:', res.status);
+            buttons.forEach(b => b.disabled = false);
+            awaitingRating = true;
+            return;
+        }
 
-    // Load next exercise after brief pause
-    await new Promise(resolve => setTimeout(resolve, 800));
-    buttons.forEach(b => b.disabled = false);
-    loadNextExercise();
+        const data = await res.json();
+
+        // Show next review time briefly
+        const nextText = document.getElementById('next-review-text');
+        nextText.textContent = 'Next review: ' + data.next_review;
+        nextText.style.display = 'block';
+
+        // Load next exercise after brief pause
+        await new Promise(resolve => setTimeout(resolve, 800));
+        buttons.forEach(b => b.disabled = false);
+        loadNextExercise();
+    } catch (error) {
+        console.error('Error rating exercise:', error);
+        buttons.forEach(b => b.disabled = false);
+        awaitingRating = true;
+    }
 }
 
 // ─── Session complete ──────────────────────────────────────────────
@@ -275,4 +341,11 @@ function showFeedback(message, type) {
 
 function hideFeedback() {
     document.getElementById('feedback-area').style.display = 'none';
+}
+
+function showStartFeedback(message, type) {
+    const el = document.getElementById('start-feedback');
+    el.textContent = message;
+    el.className = 'feedback feedback-' + type;
+    el.style.display = 'block';
 }
