@@ -1,11 +1,14 @@
 """Tests for exercise domain model."""
 
 from datetime import datetime
+from unittest.mock import MagicMock
 
 import chess
 import pytest
 
 from src.exercises import ExerciseResult, ExerciseType, TacticExercise
+from src.exercises.endgames import EndgameExercise
+from src.tablebase import TablebaseError, TablebaseMove, TablebaseResult
 
 
 class TestExerciseResult:
@@ -134,3 +137,159 @@ class TestTacticExercise:
     def test_exercise_type(self):
         ex = self._make_tactic()
         assert ex.exercise_type == ExerciseType.TACTIC
+
+
+class TestEndgameExerciseTablebase:
+    """Tests for EndgameExercise.evaluate() with tablebase integration."""
+
+    # KPK position: White king f3, pawn e2, Black king e1
+    FEN = "8/8/8/8/8/5K2/4P3/4k3 w - - 0 1"
+
+    def _make_endgame(self, acceptable_moves=None, target_outcome="win"):
+        return EndgameExercise(
+            id="test:e1",
+            fen=self.FEN,
+            tags=["KPK"],
+            source="test",
+            created_at=datetime(2025, 1, 1),
+            winning_side=True,
+            technique_name="King and Pawn",
+            acceptable_first_moves=acceptable_moves if acceptable_moves is not None else ["e2e4"],
+            target_outcome=target_outcome,
+        )
+
+    def test_evaluate_without_tablebase_correct(self):
+        """Static list check works without tablebase."""
+        ex = self._make_endgame()
+        result = ex.evaluate([chess.Move.from_uci("e2e4")], 5000)
+        assert result.correct is True
+        assert result.partial_credit == 1.0
+
+    def test_evaluate_without_tablebase_wrong(self):
+        """Static list check rejects move not in list without tablebase."""
+        ex = self._make_endgame()
+        result = ex.evaluate([chess.Move.from_uci("f3f4")], 5000)
+        assert result.correct is False
+
+    def test_evaluate_no_moves(self):
+        ex = self._make_endgame()
+        result = ex.evaluate([], 0)
+        assert result.correct is False
+        assert "No move played" in result.feedback
+
+    def test_evaluate_in_static_list_with_tablebase(self):
+        """If move is in acceptable list, tablebase is not consulted."""
+        mock_tb = MagicMock()
+        ex = self._make_endgame()
+        result = ex.evaluate([chess.Move.from_uci("e2e4")], 5000, tablebase=mock_tb)
+        assert result.correct is True
+        mock_tb.probe.assert_not_called()
+
+    def test_evaluate_tablebase_maintains_win(self):
+        """Move maintains the winning outcome → correct."""
+        mock_tb = MagicMock()
+        # Before: winning (wdl=2)
+        mock_tb.probe.side_effect = [
+            TablebaseResult(
+                wdl=2,
+                dtz=5,
+                category="win",
+                moves=[
+                    TablebaseMove(uci="e2e4", san="e4", wdl=2, dtz=3, category="win"),
+                    TablebaseMove(uci="f3f4", san="Kf4", wdl=2, dtz=7, category="win"),
+                ],
+            ),
+            # After Kf4: opponent view, wdl=-2 (losing for them)
+            TablebaseResult(wdl=-2, dtz=-7, category="loss"),
+        ]
+
+        ex = self._make_endgame(acceptable_moves=["e2e4"])  # Kf4 not in list
+        result = ex.evaluate([chess.Move.from_uci("f3f4")], 5000, tablebase=mock_tb)
+        assert result.correct is True
+        assert "maintains" in result.feedback
+
+    def test_evaluate_tablebase_worsens_outcome(self):
+        """Move changes win to draw → incorrect."""
+        mock_tb = MagicMock()
+        mock_tb.probe.side_effect = [
+            TablebaseResult(wdl=2, dtz=5, category="win", moves=[]),
+            # After move: opponent view, wdl=0 (draw for them)
+            TablebaseResult(wdl=0, dtz=0, category="draw"),
+        ]
+
+        ex = self._make_endgame(acceptable_moves=["e2e4"])
+        result = ex.evaluate([chess.Move.from_uci("f3e3")], 5000, tablebase=mock_tb)
+        assert result.correct is False
+        assert "win" in result.feedback
+        assert "draw" in result.feedback
+
+    def test_evaluate_tablebase_improves_outcome(self):
+        """Move improves draw to win → correct with full credit."""
+        mock_tb = MagicMock()
+        mock_tb.probe.side_effect = [
+            TablebaseResult(wdl=0, dtz=0, category="draw", moves=[]),
+            # After move: opponent loses
+            TablebaseResult(wdl=-2, dtz=-5, category="loss"),
+        ]
+
+        ex = self._make_endgame(acceptable_moves=[], target_outcome="draw")
+        result = ex.evaluate([chess.Move.from_uci("e2e4")], 5000, tablebase=mock_tb)
+        assert result.correct is True
+        assert result.partial_credit == 1.0
+
+    def test_evaluate_tablebase_optimal_dtz_full_credit(self):
+        """Best DTZ move gets full credit."""
+        mock_tb = MagicMock()
+        mock_tb.probe.side_effect = [
+            TablebaseResult(
+                wdl=2,
+                dtz=3,
+                category="win",
+                moves=[
+                    TablebaseMove(uci="e2e4", san="e4", wdl=2, dtz=3, category="win"),
+                ],
+            ),
+            TablebaseResult(wdl=-2, dtz=-3, category="loss"),
+        ]
+
+        ex = self._make_endgame(acceptable_moves=[])
+        result = ex.evaluate([chess.Move.from_uci("e2e4")], 5000, tablebase=mock_tb)
+        assert result.correct is True
+        assert result.partial_credit == 1.0
+
+    def test_evaluate_tablebase_suboptimal_dtz_partial_credit(self):
+        """Non-optimal but winning move gets 0.8 credit."""
+        mock_tb = MagicMock()
+        mock_tb.probe.side_effect = [
+            TablebaseResult(
+                wdl=2,
+                dtz=3,
+                category="win",
+                moves=[
+                    TablebaseMove(uci="e2e4", san="e4", wdl=2, dtz=3, category="win"),
+                ],
+            ),
+            # After Kf4: still winning for us
+            TablebaseResult(wdl=-2, dtz=-7, category="loss"),
+        ]
+
+        ex = self._make_endgame(acceptable_moves=[])
+        result = ex.evaluate([chess.Move.from_uci("f3f4")], 5000, tablebase=mock_tb)
+        assert result.correct is True
+        assert result.partial_credit == 0.8
+
+    def test_evaluate_tablebase_error_falls_back(self):
+        """If tablebase probe fails, falls back to static check."""
+        mock_tb = MagicMock()
+        mock_tb.probe.side_effect = TablebaseError("Network error")
+
+        ex = self._make_endgame(acceptable_moves=["e2e4"])
+        result = ex.evaluate([chess.Move.from_uci("f3f4")], 5000, tablebase=mock_tb)
+        assert result.correct is False
+        assert "doesn't demonstrate" in result.feedback
+
+    def test_evaluate_tablebase_empty_acceptable_list(self):
+        """With empty acceptable list and no tablebase, move is rejected."""
+        ex = self._make_endgame(acceptable_moves=[])
+        result = ex.evaluate([chess.Move.from_uci("e2e4")], 5000)
+        assert result.correct is False
