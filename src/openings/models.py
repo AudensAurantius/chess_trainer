@@ -161,3 +161,39 @@ class OpeningLine:
     def generate_id() -> str:
         """Generate a unique line ID."""
         return f"book:{uuid.uuid4().hex[:12]}"
+
+
+@dataclass(frozen=True)
+class ExplorerFilter:
+    """Client-side and server-side filters for the opening explorer.
+
+    Server-side filters (speeds, ratings) are passed to the Lichess API.
+    Client-side filters (pct thresholds, min_games) are applied after fetching.
+    All fields are optional — an empty filter is a no-op.
+    """
+
+    speeds: tuple[str, ...] | None = None
+    ratings: tuple[int, ...] | None = None
+    min_white_pct: float | None = None
+    max_white_pct: float | None = None
+    min_draw_pct: float | None = None
+    max_draw_pct: float | None = None
+    min_black_pct: float | None = None
+    max_black_pct: float | None = None
+    min_games: int | None = None
+    show_repertoire: bool = False
+
+
+@dataclass(frozen=True)
+class RepertoireInfo:
+    """Repertoire overlay info for a position in the explorer.
+
+    Attributes:
+        book_moves: UCI moves in the user's book at this position.
+        total_moves: Total explorer moves considered.
+        coverage: Fraction of explorer moves covered by the book.
+    """
+
+    book_moves: frozenset[str]
+    total_moves: int
+    coverage: float

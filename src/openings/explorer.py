@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import chess
 import requests
 
-from .models import ExplorerResult, ExplorerSource, MoveStats
+from .models import ExplorerFilter, ExplorerResult, ExplorerSource, MoveStats, RepertoireInfo
 
 if TYPE_CHECKING:
     from ..storage.opening_store import OpeningStore
@@ -137,6 +138,101 @@ def _parse_explorer_response(data: dict, fen: str, source: ExplorerSource) -> Ex
     )
 
 
+# ── Filtering ─────────────────────────────────────────────────────────────────
+
+
+def _normalize_fen(fen: str) -> str:
+    """Normalize a FEN to its first 4 fields (position, turn, castling, en passant).
+
+    This avoids false negatives from halfmove/fullmove counter differences.
+    """
+    parts = fen.split()
+    return " ".join(parts[:4])
+
+
+def filter_moves(result: ExplorerResult, filt: ExplorerFilter) -> ExplorerResult:
+    """Apply client-side filters to an ExplorerResult.
+
+    Filters compose with AND logic. Position-level stats are preserved unchanged.
+    Returns a new ExplorerResult with filtered moves list.
+
+    Args:
+        result: The explorer result to filter.
+        filt: The filter to apply.
+
+    Returns:
+        A new ExplorerResult with only moves passing all thresholds.
+    """
+    moves = result.moves
+
+    if filt.min_games is not None:
+        moves = [m for m in moves if m.total_games >= filt.min_games]
+    if filt.min_white_pct is not None:
+        moves = [m for m in moves if m.white_pct >= filt.min_white_pct]
+    if filt.max_white_pct is not None:
+        moves = [m for m in moves if m.white_pct <= filt.max_white_pct]
+    if filt.min_draw_pct is not None:
+        moves = [m for m in moves if m.draw_pct >= filt.min_draw_pct]
+    if filt.max_draw_pct is not None:
+        moves = [m for m in moves if m.draw_pct <= filt.max_draw_pct]
+    if filt.min_black_pct is not None:
+        moves = [m for m in moves if m.black_pct >= filt.min_black_pct]
+    if filt.max_black_pct is not None:
+        moves = [m for m in moves if m.black_pct <= filt.max_black_pct]
+
+    return ExplorerResult(
+        fen=result.fen,
+        white_wins=result.white_wins,
+        draws=result.draws,
+        black_wins=result.black_wins,
+        moves=moves,
+        opening_eco=result.opening_eco,
+        opening_name=result.opening_name,
+        source=result.source,
+    )
+
+
+def get_repertoire_moves(
+    fen: str,
+    explorer_moves: list[MoveStats],
+    store: OpeningStore,
+) -> RepertoireInfo:
+    """Cross-reference explorer moves with the personal opening book.
+
+    Walks each book line on a board. At each position whose normalized FEN
+    matches the target, the next move in the line is a "book move".
+
+    Args:
+        fen: Target position FEN.
+        explorer_moves: Moves from the explorer result.
+        store: The opening store containing book lines.
+
+    Returns:
+        RepertoireInfo with the set of book moves and coverage.
+    """
+    target_norm = _normalize_fen(fen)
+    book_ucis: set[str] = set()
+
+    for line in store.list_lines():
+        board = chess.Board()
+        for i, uci in enumerate(line.moves):
+            current_norm = _normalize_fen(board.fen())
+            if current_norm == target_norm and i < len(line.moves):
+                book_ucis.add(uci)
+            board.push(chess.Move.from_uci(uci))
+
+    explorer_ucis = {m.uci for m in explorer_moves}
+    overlap = book_ucis & explorer_ucis
+    total = len(explorer_moves)
+    coverage = len(overlap) / total if total > 0 else 0.0
+
+    return RepertoireInfo(
+        book_moves=frozenset(book_ucis),
+        total_moves=total,
+        coverage=coverage,
+    )
+
+
 # ── Cached client ─────────────────────────────────────────────────────────────
 
 
@@ -163,6 +259,7 @@ class OpeningExplorer:
         speeds: list[str] | None = None,
         ratings: list[int] | None = None,
         use_cache: bool = True,
+        explorer_filter: ExplorerFilter | None = None,
     ) -> ExplorerResult:
         """Explore a position, using cache when available.
 
@@ -171,9 +268,10 @@ class OpeningExplorer:
             source: Which explorer database to query.
             player: Lichess username (required for PLAYER source).
             color: Side to query for PLAYER source.
-            speeds: Speed filter.
-            ratings: Rating bracket filter.
+            speeds: Speed filter (overridden by explorer_filter.speeds if set).
+            ratings: Rating bracket filter (overridden by explorer_filter.ratings if set).
             use_cache: Whether to check the cache first.
+            explorer_filter: Optional advanced filter with server-side and client-side thresholds.
 
         Returns:
             Parsed explorer result with move statistics.
@@ -181,12 +279,22 @@ class OpeningExplorer:
         Raises:
             ExplorerError: If the API request fails.
         """
+        # Filter's server-side params take precedence over direct args
+        if explorer_filter is not None:
+            if explorer_filter.speeds is not None:
+                speeds = list(explorer_filter.speeds)
+            if explorer_filter.ratings is not None:
+                ratings = list(explorer_filter.ratings)
+
         # Check cache
         if use_cache:
             cached = self.store.cache_get(fen, source, self.cache_ttl_hours)
             if cached is not None:
                 result = _parse_explorer_response(cached, fen, source)
-                return self._filter_moves(result)
+                result = self._filter_moves(result)
+                if explorer_filter is not None:
+                    result = filter_moves(result, explorer_filter)
+                return result
 
         # Call the appropriate API endpoint
         if source == ExplorerSource.MASTERS:
@@ -203,7 +311,10 @@ class OpeningExplorer:
 
         # Parse and filter
         result = _parse_explorer_response(raw, fen, source)
-        return self._filter_moves(result)
+        result = self._filter_moves(result)
+        if explorer_filter is not None:
+            result = filter_moves(result, explorer_filter)
+        return result
 
     def _filter_moves(self, result: ExplorerResult) -> ExplorerResult:
         """Remove moves with fewer games than min_games."""

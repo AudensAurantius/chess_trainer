@@ -892,11 +892,32 @@ def explore(
         None, "--player", "-p", help="Lichess username (for player source)"
     ),
     color: str = typer.Option("white", "--color", help="Side for player source"),
+    speeds: str | None = typer.Option(
+        None, "--speeds", help="Comma-separated speed filters (blitz,rapid,classical)"
+    ),
+    ratings: str | None = typer.Option(
+        None, "--ratings", help="Comma-separated rating brackets (1600,1800,2000)"
+    ),
+    min_white_pct: float | None = typer.Option(
+        None, "--min-white-pct", help="Min white win %% to show a move (0-100)"
+    ),
+    min_draw_pct: float | None = typer.Option(
+        None, "--min-draw-pct", help="Min draw %% to show a move (0-100)"
+    ),
+    max_draw_pct: float | None = typer.Option(
+        None, "--max-draw-pct", help="Max draw %% to show a move (0-100)"
+    ),
+    min_black_pct: float | None = typer.Option(
+        None, "--min-black-pct", help="Min black win %% to show a move (0-100)"
+    ),
+    repertoire: bool = typer.Option(
+        False, "--repertoire", "-R", help="Show repertoire overlay column"
+    ),
     db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Explore opening statistics from the Lichess explorer."""
     from ..openings.explorer import OpeningExplorer
-    from ..openings.models import ExplorerSource
+    from ..openings.models import ExplorerFilter, ExplorerSource
 
     cfg = _get_config()
     source_str = source or cfg.openings.explorer_source
@@ -914,13 +935,42 @@ def explore(
             console.print(f"[red]Invalid FEN: {fen}[/red]")
             raise typer.Exit(1)
 
+    # Build ExplorerFilter from CLI options
+    parsed_speeds = tuple(s.strip() for s in speeds.split(",")) if speeds else None
+    parsed_ratings = tuple(int(r.strip()) for r in ratings.split(",")) if ratings else None
+
+    has_filter = any(
+        v is not None
+        for v in (parsed_speeds, parsed_ratings, min_white_pct, min_draw_pct, max_draw_pct, min_black_pct)
+    ) or repertoire
+
+    explorer_filter = None
+    if has_filter:
+        explorer_filter = ExplorerFilter(
+            speeds=parsed_speeds,
+            ratings=parsed_ratings,
+            min_white_pct=min_white_pct,
+            min_draw_pct=min_draw_pct,
+            max_draw_pct=max_draw_pct,
+            min_black_pct=min_black_pct,
+            show_repertoire=repertoire,
+        )
+
     with get_repo(db) as repo:
         explorer = OpeningExplorer(
             repo.openings,
             cache_ttl_hours=cfg.openings.cache_ttl_hours,
             min_games=cfg.openings.min_games,
         )
-        _interactive_explore(board, explorer, explorer_source, player=player, color=color)
+        _interactive_explore(
+            board,
+            explorer,
+            explorer_source,
+            player=player,
+            color=color,
+            explorer_filter=explorer_filter,
+            store=repo.openings if repertoire else None,
+        )
 
 
 def _interactive_explore(
@@ -930,9 +980,11 @@ def _interactive_explore(
     *,
     player: str | None = None,
     color: str = "white",
+    explorer_filter=None,
+    store=None,
 ) -> None:
     """Interactive explorer REPL: view stats, play moves to go deeper."""
-    from ..openings.explorer import ExplorerError
+    from ..openings.explorer import ExplorerError, get_repertoire_moves
     from .board import render_board
 
     move_stack: list[chess.Move] = []
@@ -941,10 +993,21 @@ def _interactive_explore(
         flipped = board.turn == chess.BLACK
 
         try:
-            result = explorer.explore(board.fen(), source, player=player, color=color)
+            result = explorer.explore(
+                board.fen(),
+                source,
+                player=player,
+                color=color,
+                explorer_filter=explorer_filter,
+            )
         except ExplorerError as e:
             console.print(f"[red]Explorer error: {e}[/red]")
             break
+
+        # Get repertoire info if requested
+        rep_info = None
+        if explorer_filter and explorer_filter.show_repertoire and store is not None:
+            rep_info = get_repertoire_moves(board.fen(), result.moves, store)
 
         # Display board
         console.print(render_board(board, flipped=flipped))
@@ -968,17 +1031,30 @@ def _interactive_explore(
             table.add_column("Black", justify="right", style="red")
             table.add_column("Avg Elo", justify="right", style="dim")
 
+            if rep_info is not None:
+                table.add_column("Book", justify="center")
+
             for m in result.moves:
-                table.add_row(
+                row = [
                     m.san,
                     f"{m.total_games:,}",
                     f"{m.white_pct:.0f}%",
                     f"{m.draw_pct:.0f}%",
                     f"{m.black_pct:.0f}%",
                     str(m.average_rating) if m.average_rating else "-",
-                )
+                ]
+                if rep_info is not None:
+                    in_book = m.uci in rep_info.book_moves
+                    row.append("[green]\u2713[/green]" if in_book else "-")
+                table.add_row(*row)
 
             console.print(table)
+
+            if rep_info is not None:
+                book_count = sum(1 for m in result.moves if m.uci in rep_info.book_moves)
+                console.print(
+                    f"[dim]Repertoire: {book_count}/{len(result.moves)} moves covered[/dim]"
+                )
         else:
             console.print("[yellow]No moves found in database.[/yellow]")
 
