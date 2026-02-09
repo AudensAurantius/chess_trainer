@@ -21,18 +21,23 @@ from src.openings.book import (
 from src.openings.explorer import (
     ExplorerError,
     OpeningExplorer,
+    _normalize_fen,
     _parse_explorer_response,
     _parse_move_stats,
     explore_lichess,
     explore_masters,
     explore_player,
+    filter_moves,
+    get_repertoire_moves,
 )
 from src.openings.models import (
     BookColor,
+    ExplorerFilter,
     ExplorerResult,
     ExplorerSource,
     MoveStats,
     OpeningLine,
+    RepertoireInfo,
 )
 from src.storage import Repository
 
@@ -1185,3 +1190,452 @@ class TestConfigShowIncludesOpenings:
         assert "openings.explorer_source" in result.output
         assert "openings.cache_ttl_hours" in result.output
         assert "openings.min_games" in result.output
+
+
+# ── Explorer Filter Models ───────────────────────────────────────────────────
+
+
+class TestExplorerFilterModel:
+    def test_default_is_noop(self):
+        f = ExplorerFilter()
+        assert f.speeds is None
+        assert f.ratings is None
+        assert f.min_white_pct is None
+        assert f.min_games is None
+        assert f.show_repertoire is False
+
+    def test_frozen(self):
+        f = ExplorerFilter(speeds=("blitz",))
+        with pytest.raises(AttributeError):
+            f.speeds = ("rapid",)
+
+    def test_with_all_fields(self):
+        f = ExplorerFilter(
+            speeds=("blitz", "rapid"),
+            ratings=(1600, 2000),
+            min_white_pct=40.0,
+            max_white_pct=60.0,
+            min_draw_pct=10.0,
+            max_draw_pct=50.0,
+            min_black_pct=20.0,
+            max_black_pct=45.0,
+            min_games=100,
+            show_repertoire=True,
+        )
+        assert f.speeds == ("blitz", "rapid")
+        assert f.ratings == (1600, 2000)
+        assert f.min_white_pct == 40.0
+        assert f.show_repertoire is True
+
+
+class TestRepertoireInfoModel:
+    def test_basic(self):
+        info = RepertoireInfo(book_moves=frozenset({"e2e4"}), total_moves=5, coverage=0.2)
+        assert "e2e4" in info.book_moves
+        assert info.total_moves == 5
+        assert info.coverage == 0.2
+
+    def test_frozen(self):
+        info = RepertoireInfo(book_moves=frozenset(), total_moves=0, coverage=0.0)
+        with pytest.raises(AttributeError):
+            info.total_moves = 10
+
+
+# ── filter_moves() ───────────────────────────────────────────────────────────
+
+
+# Helper: build an ExplorerResult with specific moves for filter testing
+def _make_result(moves: list[MoveStats]) -> ExplorerResult:
+    return ExplorerResult(
+        fen=chess.STARTING_FEN,
+        white_wins=1000,
+        draws=500,
+        black_wins=500,
+        moves=moves,
+        opening_eco="A00",
+        opening_name="Test",
+    )
+
+
+# Three test moves with distinct distributions:
+# e4: 60% white, 20% draw, 20% black (100 games)
+# d4: 40% white, 40% draw, 20% black (50 games)
+# c4: 30% white, 30% draw, 40% black (10 games)
+FILTER_MOVES = [
+    MoveStats(uci="e2e4", san="e4", white_wins=60, draws=20, black_wins=20),
+    MoveStats(uci="d2d4", san="d4", white_wins=20, draws=20, black_wins=10),
+    MoveStats(uci="c2c4", san="c4", white_wins=3, draws=3, black_wins=4),
+]
+
+
+class TestFilterMoves:
+    def test_empty_filter_is_noop(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter())
+        assert len(filtered.moves) == 3
+
+    def test_min_white_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(min_white_pct=50.0))
+        ucis = [m.uci for m in filtered.moves]
+        assert "e2e4" in ucis  # 60%
+        assert "d2d4" not in ucis  # 40%
+        assert "c2c4" not in ucis  # 30%
+
+    def test_max_white_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(max_white_pct=35.0))
+        ucis = [m.uci for m in filtered.moves]
+        assert "e2e4" not in ucis  # 60%
+        assert "c2c4" in ucis  # 30%
+
+    def test_min_draw_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(min_draw_pct=30.0))
+        ucis = [m.uci for m in filtered.moves]
+        assert "d2d4" in ucis  # 40%
+        assert "c2c4" in ucis  # 30%
+        assert "e2e4" not in ucis  # 20%
+
+    def test_max_draw_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(max_draw_pct=25.0))
+        ucis = [m.uci for m in filtered.moves]
+        assert "e2e4" in ucis  # 20%
+        assert "d2d4" not in ucis  # 40%
+
+    def test_min_black_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(min_black_pct=30.0))
+        ucis = [m.uci for m in filtered.moves]
+        assert "c2c4" in ucis  # 40%
+        assert "e2e4" not in ucis  # 20%
+
+    def test_max_black_pct(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(max_black_pct=15.0))
+        # c4 has 40% black, d4 has 20%, e4 has 20% — none <= 15%
+        assert len(filtered.moves) == 0
+
+    def test_combined_thresholds_and_logic(self):
+        result = _make_result(FILTER_MOVES)
+        # White >= 35% AND draw <= 30%
+        filtered = filter_moves(
+            result, ExplorerFilter(min_white_pct=35.0, max_draw_pct=30.0)
+        )
+        ucis = [m.uci for m in filtered.moves]
+        # e4: white=60%, draw=20% → pass; d4: white=40%, draw=40% → fail draw
+        assert ucis == ["e2e4"]
+
+    def test_min_games_in_filter(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(min_games=20))
+        ucis = [m.uci for m in filtered.moves]
+        assert "e2e4" in ucis  # 100
+        assert "d2d4" in ucis  # 50
+        assert "c2c4" not in ucis  # 10
+
+    def test_all_filtered_preserves_position_stats(self):
+        result = _make_result(FILTER_MOVES)
+        filtered = filter_moves(result, ExplorerFilter(min_games=999999))
+        assert filtered.moves == []
+        assert filtered.white_wins == 1000
+        assert filtered.draws == 500
+        assert filtered.fen == chess.STARTING_FEN
+        assert filtered.opening_name == "Test"
+
+    def test_preserves_source_and_eco(self):
+        result = ExplorerResult(
+            fen=chess.STARTING_FEN,
+            white_wins=100,
+            draws=50,
+            black_wins=50,
+            moves=FILTER_MOVES,
+            opening_eco="B20",
+            opening_name="Sicilian",
+            source=ExplorerSource.MASTERS,
+        )
+        filtered = filter_moves(result, ExplorerFilter())
+        assert filtered.source == ExplorerSource.MASTERS
+        assert filtered.opening_eco == "B20"
+
+
+# ── get_repertoire_moves() ───────────────────────────────────────────────────
+
+
+class TestGetRepertoireMoves:
+    def test_empty_book(self, repo):
+        moves = [MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5)]
+        info = get_repertoire_moves(chess.STARTING_FEN, moves, repo.openings)
+        assert info.book_moves == frozenset()
+        assert info.coverage == 0.0
+
+    def test_single_line_matching(self, repo):
+        line = OpeningLine(id="book:rep1", color=BookColor.WHITE, moves=["e2e4", "e7e5"])
+        repo.openings.add_line(line)
+
+        moves = [
+            MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5),
+            MoveStats(uci="d2d4", san="d4", white_wins=8, draws=4, black_wins=3),
+        ]
+        info = get_repertoire_moves(chess.STARTING_FEN, moves, repo.openings)
+        assert "e2e4" in info.book_moves
+        assert "d2d4" not in info.book_moves
+        assert info.coverage == 0.5  # 1 of 2 moves
+
+    def test_multiple_lines_union(self, repo):
+        repo.openings.add_line(
+            OpeningLine(id="book:rep2a", color=BookColor.WHITE, moves=["e2e4", "e7e5"])
+        )
+        repo.openings.add_line(
+            OpeningLine(id="book:rep2b", color=BookColor.WHITE, moves=["d2d4", "d7d5"])
+        )
+
+        moves = [
+            MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5),
+            MoveStats(uci="d2d4", san="d4", white_wins=8, draws=4, black_wins=3),
+            MoveStats(uci="c2c4", san="c4", white_wins=5, draws=2, black_wins=1),
+        ]
+        info = get_repertoire_moves(chess.STARTING_FEN, moves, repo.openings)
+        assert "e2e4" in info.book_moves
+        assert "d2d4" in info.book_moves
+        assert "c2c4" not in info.book_moves
+        assert info.coverage == pytest.approx(2 / 3)
+
+    def test_no_lines_reach_position(self, repo):
+        # Book has only 1.e4, but we're querying a position after 1.d4 d5
+        repo.openings.add_line(
+            OpeningLine(id="book:rep3", color=BookColor.WHITE, moves=["e2e4"])
+        )
+        board = chess.Board()
+        board.push_uci("d2d4")
+        board.push_uci("d7d5")
+        fen = board.fen()
+
+        moves = [MoveStats(uci="c2c4", san="c4", white_wins=10, draws=5, black_wins=5)]
+        info = get_repertoire_moves(fen, moves, repo.openings)
+        assert info.book_moves == frozenset()
+        assert info.coverage == 0.0
+
+    def test_mid_line_position_match(self, repo):
+        # Line: 1.e4 e5 2.Nf3 Nc6 — position after 1.e4 e5 should show Nf3
+        repo.openings.add_line(
+            OpeningLine(
+                id="book:rep4",
+                color=BookColor.WHITE,
+                moves=["e2e4", "e7e5", "g1f3", "b8c6"],
+            )
+        )
+        board = chess.Board()
+        board.push_uci("e2e4")
+        board.push_uci("e7e5")
+        fen = board.fen()
+
+        moves = [
+            MoveStats(uci="g1f3", san="Nf3", white_wins=10, draws=5, black_wins=5),
+            MoveStats(uci="f1c4", san="Bc4", white_wins=8, draws=3, black_wins=2),
+        ]
+        info = get_repertoire_moves(fen, moves, repo.openings)
+        assert "g1f3" in info.book_moves
+        assert "f1c4" not in info.book_moves
+
+    def test_fen_normalization_ignores_move_counters(self, repo):
+        # Two FENs that differ only in halfmove/fullmove counters should match
+        repo.openings.add_line(
+            OpeningLine(id="book:rep5", color=BookColor.WHITE, moves=["e2e4", "e7e5"])
+        )
+
+        # The FEN from the book at starting position has "0 1" for counters
+        # Query with different counters
+        fen_different_counters = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 5 10"
+        moves = [MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5)]
+        info = get_repertoire_moves(fen_different_counters, moves, repo.openings)
+        assert "e2e4" in info.book_moves
+
+    def test_empty_explorer_moves(self, repo):
+        repo.openings.add_line(
+            OpeningLine(id="book:rep6", color=BookColor.WHITE, moves=["e2e4"])
+        )
+        info = get_repertoire_moves(chess.STARTING_FEN, [], repo.openings)
+        assert info.total_moves == 0
+        assert info.coverage == 0.0
+        # book_moves can still find e2e4 even with no explorer moves
+        assert "e2e4" in info.book_moves
+
+    def test_coverage_calculation(self, repo):
+        repo.openings.add_line(
+            OpeningLine(id="book:rep7a", color=BookColor.WHITE, moves=["e2e4"])
+        )
+        repo.openings.add_line(
+            OpeningLine(id="book:rep7b", color=BookColor.WHITE, moves=["d2d4"])
+        )
+        moves = [
+            MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5),
+            MoveStats(uci="d2d4", san="d4", white_wins=8, draws=4, black_wins=3),
+            MoveStats(uci="c2c4", san="c4", white_wins=5, draws=2, black_wins=1),
+            MoveStats(uci="g1f3", san="Nf3", white_wins=3, draws=1, black_wins=1),
+            MoveStats(uci="b2b3", san="b3", white_wins=2, draws=1, black_wins=1),
+        ]
+        info = get_repertoire_moves(chess.STARTING_FEN, moves, repo.openings)
+        assert info.coverage == pytest.approx(2 / 5)
+
+
+# ── FEN normalization ────────────────────────────────────────────────────────
+
+
+class TestNormalizeFen:
+    def test_strips_move_counters(self):
+        fen1 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        fen2 = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 5 10"
+        assert _normalize_fen(fen1) == _normalize_fen(fen2)
+
+    def test_preserves_position_fields(self):
+        fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+        norm = _normalize_fen(fen)
+        assert norm == "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3"
+
+
+# ── ExploreWithFilter (integration with OpeningExplorer) ─────────────────────
+
+
+class TestExploreWithFilter:
+    @patch("src.openings.explorer.explore_lichess")
+    def test_filter_speeds_ratings_passed_to_api(self, mock_api, repo):
+        mock_api.return_value = EXPLORER_RESPONSE
+        explorer = OpeningExplorer(repo.openings, cache_ttl_hours=168, min_games=1)
+        filt = ExplorerFilter(speeds=("blitz", "rapid"), ratings=(1600, 2000))
+        explorer.explore(chess.STARTING_FEN, explorer_filter=filt)
+
+        mock_api.assert_called_once()
+        _, kwargs = mock_api.call_args
+        assert kwargs["speeds"] == ["blitz", "rapid"]
+        assert kwargs["ratings"] == [1600, 2000]
+
+    @patch("src.openings.explorer.explore_lichess")
+    def test_client_side_filter_applied_after_fetch(self, mock_api, repo):
+        mock_api.return_value = EXPLORER_RESPONSE
+        explorer = OpeningExplorer(repo.openings, cache_ttl_hours=168, min_games=1)
+        # e4 has 54.5% white, d4 has 45.5%, c4 has 41.7%
+        filt = ExplorerFilter(min_white_pct=50.0)
+        result = explorer.explore(chess.STARTING_FEN, explorer_filter=filt)
+        ucis = [m.uci for m in result.moves]
+        assert "e2e4" in ucis
+        assert "d2d4" not in ucis
+
+    def test_filter_applied_to_cached_result(self, repo):
+        repo.openings.cache_put(chess.STARTING_FEN, ExplorerSource.LICHESS, EXPLORER_RESPONSE)
+        explorer = OpeningExplorer(repo.openings, cache_ttl_hours=168, min_games=1)
+        filt = ExplorerFilter(min_white_pct=50.0)
+        result = explorer.explore(chess.STARTING_FEN, explorer_filter=filt)
+        ucis = [m.uci for m in result.moves]
+        assert "e2e4" in ucis
+        assert "d2d4" not in ucis
+
+    @patch("src.openings.explorer.explore_lichess")
+    def test_none_filter_backward_compatible(self, mock_api, repo):
+        mock_api.return_value = EXPLORER_RESPONSE
+        explorer = OpeningExplorer(repo.openings, cache_ttl_hours=168, min_games=1)
+        result = explorer.explore(chess.STARTING_FEN, explorer_filter=None)
+        assert len(result.moves) == 3
+
+    @patch("src.openings.explorer.explore_lichess")
+    def test_filter_with_min_games_stacks_with_explorer_min_games(self, mock_api, repo):
+        mock_api.return_value = EXPLORER_RESPONSE
+        # Explorer min_games=10000 filters first, then filter min_games=40000
+        explorer = OpeningExplorer(repo.openings, cache_ttl_hours=168, min_games=10000)
+        filt = ExplorerFilter(min_games=40000)
+        result = explorer.explore(chess.STARTING_FEN, explorer_filter=filt)
+        ucis = [m.uci for m in result.moves]
+        assert "e2e4" in ucis  # 55000 games
+        assert "d2d4" not in ucis  # 33000 games
+
+
+# ── CLI explore with filter flags ────────────────────────────────────────────
+
+
+class TestExploreCommandFilters:
+    @patch("src.cli.app._interactive_explore")
+    def test_speeds_parsed(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app, ["explore", "--speeds", "blitz,rapid", "--db", str(db_path)]
+        )
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        filt = kwargs["explorer_filter"]
+        assert filt is not None
+        assert filt.speeds == ("blitz", "rapid")
+
+    @patch("src.cli.app._interactive_explore")
+    def test_ratings_parsed(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app, ["explore", "--ratings", "1600,1800,2000", "--db", str(db_path)]
+        )
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        filt = kwargs["explorer_filter"]
+        assert filt is not None
+        assert filt.ratings == (1600, 1800, 2000)
+
+    @patch("src.cli.app._interactive_explore")
+    def test_min_white_pct_flows_through(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app, ["explore", "--min-white-pct", "45.5", "--db", str(db_path)]
+        )
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        filt = kwargs["explorer_filter"]
+        assert filt is not None
+        assert filt.min_white_pct == 45.5
+
+    @patch("src.cli.app._interactive_explore")
+    def test_repertoire_flag(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app, ["explore", "--repertoire", "--db", str(db_path)]
+        )
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        filt = kwargs["explorer_filter"]
+        assert filt is not None
+        assert filt.show_repertoire is True
+        assert kwargs["store"] is not None
+
+    @patch("src.cli.app._interactive_explore")
+    def test_combined_flags(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app,
+            [
+                "explore",
+                "--speeds",
+                "blitz",
+                "--min-draw-pct",
+                "10",
+                "--max-draw-pct",
+                "50",
+                "--min-black-pct",
+                "20",
+                "--repertoire",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        filt = kwargs["explorer_filter"]
+        assert filt.speeds == ("blitz",)
+        assert filt.min_draw_pct == 10.0
+        assert filt.max_draw_pct == 50.0
+        assert filt.min_black_pct == 20.0
+        assert filt.show_repertoire is True
+
+    @patch("src.cli.app._interactive_explore")
+    def test_no_flags_no_filter(self, mock_explore, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(app, ["explore", "--db", str(db_path)])
+        assert result.exit_code == 0
+        _, kwargs = mock_explore.call_args
+        assert kwargs["explorer_filter"] is None
