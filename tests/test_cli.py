@@ -382,7 +382,7 @@ class TestConfigCommands:
 
     def test_config_init_creates_file(self, tmp_path):
         config_path = tmp_path / "config.toml"
-        with patch("src.config.DEFAULT_CONFIG_PATH", config_path):
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
             result = runner.invoke(app, ["config", "init"])
         assert result.exit_code == 0
         assert config_path.exists()
@@ -390,7 +390,7 @@ class TestConfigCommands:
     def test_config_init_existing_no_overwrite(self, tmp_path):
         config_path = tmp_path / "config.toml"
         config_path.write_text("# existing")
-        with patch("src.config.DEFAULT_CONFIG_PATH", config_path):
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
             # User says 'n' to overwrite
             result = runner.invoke(app, ["config", "init"], input="n\n")
         assert result.exit_code != 0  # Abort
@@ -421,3 +421,126 @@ class TestWebCommand:
             result = runner.invoke(app, ["web"])
             # When uvicorn import fails, should show error
             assert result.exit_code != 0 or "not installed" in result.output
+
+
+class TestConfigGetCommand:
+    """Tests for config get command."""
+
+    def test_valid_key(self):
+        result = runner.invoke(app, ["config", "get", "web.port"])
+        assert result.exit_code == 0
+        assert "web.port" in result.output
+        assert "8000" in result.output
+
+    def test_invalid_key_shows_valid_keys(self):
+        result = runner.invoke(app, ["config", "get", "bogus.key"])
+        assert result.exit_code == 1
+        assert "Unknown key" in result.output
+        assert "Valid keys" in result.output
+        assert "web.port" in result.output
+
+    def test_token_masked(self, monkeypatch):
+        monkeypatch.setenv("CHESS_TRAINER_LICHESS_TOKEN", "secret123")
+        result = runner.invoke(app, ["config", "get", "lichess.token"])
+        assert result.exit_code == 0
+        assert "***" in result.output
+        assert "secret123" not in result.output
+
+    def test_none_value_shows_not_set(self, monkeypatch):
+        monkeypatch.delenv("CHESS_TRAINER_LICHESS_TOKEN", raising=False)
+        monkeypatch.delenv("LICHESS_TOKEN", raising=False)
+        result = runner.invoke(app, ["config", "get", "lichess.token"])
+        assert result.exit_code == 0
+        assert "(not set)" in result.output
+
+
+class TestConfigSetCommand:
+    """Tests for config set command."""
+
+    def test_valid_set(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        with patch("src.config.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "set", "web.port", "9000"])
+        assert result.exit_code == 0
+        assert "9000" in result.output
+
+    def test_invalid_key(self):
+        result = runner.invoke(app, ["config", "set", "bogus.key", "val"])
+        assert result.exit_code == 1
+        assert "Unknown" in result.output
+
+    def test_invalid_value(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        with patch("src.config.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "set", "web.port", "abc"])
+        assert result.exit_code == 1
+
+    def test_out_of_range(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        with patch("src.config.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "set", "web.port", "99999"])
+        assert result.exit_code == 1
+        assert "must be between" in result.output
+
+
+class TestConfigResetCommand:
+    """Tests for config reset command."""
+
+    def test_reset_single_key(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("[web]\nport = 9000\n")
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "reset", "web.port"])
+        assert result.exit_code == 0
+        assert "reset to default" in result.output
+
+    def test_reset_all_confirms(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("[web]\nport = 9000\n")
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "reset"], input="y\n")
+        assert result.exit_code == 0
+        assert "reset to defaults" in result.output
+
+    def test_reset_all_aborts(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        config_path.write_text("[web]\nport = 9000\n")
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "reset"], input="n\n")
+        assert result.exit_code != 0  # Abort
+
+
+class TestConfigInitInteractive:
+    """Tests for config init --interactive."""
+
+    def test_wizard_with_defaults(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        # Respond with defaults (just Enter 5 times)
+        with (
+            patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path),
+            patch("src.config.DEFAULT_CONFIG_PATH", config_path),
+        ):
+            result = runner.invoke(
+                app, ["config", "init", "--interactive"], input="\n\n\n\n\n"
+            )
+        assert result.exit_code == 0
+        assert "Setup complete" in result.output
+        assert config_path.exists()
+
+    def test_wizard_with_custom_values(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        # Provide custom max_new_cards and max_reviews
+        answers = (
+            "~/.chess-trainer/trainer.db\n"  # db path (default)
+            "\n"  # token (skip)
+            "\n"  # engine (skip)
+            "30\n"  # max_new_cards
+            "200\n"  # max_reviews
+        )
+        with (
+            patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path),
+            patch("src.config.DEFAULT_CONFIG_PATH", config_path),
+        ):
+            result = runner.invoke(app, ["config", "init", "--interactive"], input=answers)
+        assert result.exit_code == 0
+        assert "Setup complete" in result.output

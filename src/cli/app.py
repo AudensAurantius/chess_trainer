@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .. import __version__, configure_logging
-from ..config import AppConfig, load_config
+from ..config import DEFAULT_CONFIG_PATH, AppConfig, load_config
 from ..exercises import Exercise, ExerciseType
 from ..importers import LichessPuzzleImporter
 from ..scheduling.fsrs import Rating
@@ -686,9 +686,11 @@ app.add_typer(config_app, name="config")
 
 
 @config_app.command("init")
-def config_init() -> None:
+def config_init(
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Run setup wizard"),
+) -> None:
     """Generate a default config file at ~/.chess-trainer/config.toml."""
-    from ..config import DEFAULT_CONFIG_PATH, generate_default_config
+    from ..config import generate_default_config, set_config_value
 
     if DEFAULT_CONFIG_PATH.exists():
         console.print(f"[yellow]Config already exists:[/yellow] {DEFAULT_CONFIG_PATH}")
@@ -699,6 +701,27 @@ def config_init() -> None:
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     DEFAULT_CONFIG_PATH.write_text(generate_default_config())
     console.print(f"[green]\u2713[/green] Config written to {DEFAULT_CONFIG_PATH}")
+
+    if interactive:
+        console.print("\n[bold]Setup Wizard[/bold]\n")
+        wizard_prompts = [
+            ("database.path", "Database path", "~/.chess-trainer/trainer.db"),
+            ("lichess.token", "Lichess API token (leave empty to skip)", ""),
+            ("engine.path", "Engine path (leave empty for auto-detect)", ""),
+            ("training.max_new_cards", "Max new cards per session", "20"),
+            ("training.max_reviews", "Max reviews per session", "100"),
+        ]
+        for key, prompt_text, default in wizard_prompts:
+            answer = typer.prompt(prompt_text, default=default, show_default=True)
+            if answer != default and answer != "":
+                try:
+                    set_config_value(key, answer)
+                except (KeyError, ValueError) as e:
+                    console.print(f"[yellow]Skipping {key}: {e}[/yellow]")
+            elif answer == "" and default != "":
+                # User cleared a field that had a default — skip
+                pass
+        console.print("\n[green]\u2713[/green] Setup complete!")
 
 
 @config_app.command("show")
@@ -737,6 +760,83 @@ def config_show() -> None:
             title="Effective Configuration",
         )
     )
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(help="Config key, e.g. web.port"),
+) -> None:
+    """Get a single configuration value."""
+    from ..config import get_config_keys, get_config_value
+
+    cfg = _get_config()
+    try:
+        value = get_config_value(cfg, key)
+    except KeyError:
+        console.print(f"[red]Unknown key: {key}[/red]\n")
+        console.print("[bold]Valid keys:[/bold]")
+        for k in sorted(get_config_keys()):
+            console.print(f"  {k}")
+        raise typer.Exit(1)
+
+    # Mask sensitive values
+    if key == "lichess.token" and value is not None:
+        display = "***"
+    elif value is None:
+        display = "(not set)"
+    else:
+        display = str(value)
+
+    console.print(f"{key} = {display}")
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(help="Config key, e.g. web.port"),
+    value: str = typer.Argument(help="Value to set"),
+) -> None:
+    """Set a configuration value."""
+    from ..config import set_config_value
+
+    try:
+        result = set_config_value(key, value)
+    except KeyError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]\u2713[/green] {key} = {result}")
+
+
+@config_app.command("reset")
+def config_reset(
+    key: str = typer.Argument(None, help="Config key to reset (omit to reset all)"),
+) -> None:
+    """Reset a config key to default, or reset the entire config file."""
+    from ..config import get_config_value, reset_config_value
+
+    if key is None:
+        if not typer.confirm("Reset ALL config to defaults?", default=False):
+            raise typer.Abort()
+        reset_config_value(config_path=DEFAULT_CONFIG_PATH)
+        console.print("[green]\u2713[/green] Config reset to defaults.")
+        return
+
+    try:
+        reset_config_value(key, config_path=DEFAULT_CONFIG_PATH)
+    except KeyError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    # Show the effective default
+    cfg = load_config(DEFAULT_CONFIG_PATH)
+    try:
+        default_val = get_config_value(cfg, key)
+    except KeyError:
+        default_val = "(unknown)"
+    console.print(f"[green]\u2713[/green] {key} reset to default: {default_val}")
 
 
 def _parse_pgn_to_board(pgn_text: str) -> chess.Board:

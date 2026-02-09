@@ -3,10 +3,14 @@
 Override chain: defaults → config file → environment variables → CLI flags.
 """
 
+from __future__ import annotations
+
 import os
 import tomllib
-from dataclasses import dataclass, field
+import types
+from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import Union, get_args, get_origin, get_type_hints
 
 DEFAULT_CONFIG_DIR = Path.home() / ".chess-trainer"
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
@@ -359,3 +363,271 @@ skip_first_plies = 6         # Skip opening theory moves
 use_lichess_fallback = true         # Fall back to Lichess API
 max_pieces = 7                      # Max pieces for tablebase probe
 """
+
+
+# ── Config CLI helpers ────────────────────────────────────────────────────────
+
+
+def _serialize_toml(data: dict) -> str:
+    """Serialize a nested dict to TOML format.
+
+    Handles str, int, float, bool, list[int], and None (commented out).
+    Bool must be checked before int since ``bool`` is an ``int`` subclass.
+    """
+    lines: list[str] = []
+    for section, values in data.items():
+        if not isinstance(values, dict):
+            continue
+        lines.append(f"[{section}]")
+        for key, val in values.items():
+            if val is None:
+                lines.append(f"# {key} =")
+            elif isinstance(val, bool):
+                lines.append(f"{key} = {str(val).lower()}")
+            elif isinstance(val, int):
+                lines.append(f"{key} = {val}")
+            elif isinstance(val, float):
+                lines.append(f"{key} = {val}")
+            elif isinstance(val, list):
+                items = ", ".join(str(v) for v in val)
+                lines.append(f"{key} = [{items}]")
+            else:
+                # String — escape backslashes and quotes
+                escaped = str(val).replace("\\", "\\\\").replace('"', '\\"')
+                lines.append(f'{key} = "{escaped}"')
+        lines.append("")
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def get_config_keys() -> dict[str, type]:
+    """Introspect AppConfig dataclass fields to build a flat key→type map.
+
+    Returns:
+        Mapping of ``"section.field"`` → Python type, e.g.
+        ``{"web.port": int, "lichess.token": str, ...}``.
+    """
+    result: dict[str, type] = {}
+    hints = get_type_hints(AppConfig)
+    for f in fields(AppConfig):
+        sub_cls = hints[f.name]
+        sub_hints = get_type_hints(sub_cls)
+        for sf in fields(sub_cls):
+            tp = sub_hints[sf.name]
+            # Unwrap Optional (str | None → str)
+            origin = get_origin(tp)
+            if origin is Union or isinstance(tp, types.UnionType):
+                args = [a for a in get_args(tp) if a is not type(None)]
+                tp = args[0] if args else str
+            # Unwrap generics (list[int] → list)
+            origin = get_origin(tp)
+            if origin is not None:
+                tp = origin
+            result[f"{f.name}.{sf.name}"] = tp
+    return result
+
+
+def coerce_value(raw: str, target_type: type) -> object:
+    """Coerce a CLI string value to the target Python type.
+
+    Args:
+        raw: Raw string from the CLI.
+        target_type: Expected Python type (str, int, float, bool, list).
+
+    Returns:
+        Coerced Python value.
+
+    Raises:
+        ValueError: If the value cannot be coerced.
+    """
+    # Empty string → None for Optional fields (caller handles this)
+    if raw == "" and target_type is str:
+        return None
+
+    if target_type is bool:
+        lower = raw.lower()
+        if lower in ("true", "yes", "1"):
+            return True
+        if lower in ("false", "no", "0"):
+            return False
+        raise ValueError(f"Invalid boolean: {raw!r}. Use true/false/yes/no/1/0.")
+
+    if target_type is int:
+        return int(raw)
+
+    if target_type is float:
+        return float(raw)
+
+    if target_type is list:
+        # Accept "1,10" or "[1, 10]" or "[]"
+        stripped = raw.strip().strip("[]")
+        if not stripped:
+            return []
+        return [int(x.strip()) for x in stripped.split(",")]
+
+    return raw  # str
+
+
+_VALIDATION_RULES: dict[str, tuple] = {
+    "web.port": ("range", 1, 65535),
+    "scheduler.request_retention": ("range", 0.0, 1.0),
+    "engine.default_depth": ("range", 1, 100),
+    "engine.default_multipv": ("range", 1, 20),
+    "engine.hash_mb": ("range", 1, 65536),
+    "engine.threads": ("range", 1, 256),
+    "training.max_new_cards": ("range", 0, 10000),
+    "training.max_reviews": ("range", 0, 10000),
+    "openings.min_games": ("range", 0, 1000000),
+    "openings.cache_ttl_hours": ("range", 0, 100000),
+    "game_analysis.analysis_depth": ("range", 1, 100),
+    "game_analysis.max_exercises_per_game": ("range", 1, 1000),
+    "game_analysis.skip_first_plies": ("range", 0, 200),
+    "scheduler.maximum_interval": ("range", 1, 365000),
+    "tablebase.max_pieces": ("range", 3, 7),
+    "chesscom.request_delay": ("range", 0.0, 60.0),
+    "logging.level": ("enum", {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}),
+    "game_analysis.min_classification": ("enum", {"INACCURACY", "MISTAKE", "BLUNDER"}),
+    "openings.explorer_source": ("enum", {"lichess", "masters", "player"}),
+}
+
+
+def _validate_value(key: str, value: object) -> None:
+    """Validate a config value against domain constraints.
+
+    Raises:
+        ValueError: If the value violates constraints.
+    """
+    rule = _VALIDATION_RULES.get(key)
+    if rule is None:
+        return
+
+    kind = rule[0]
+    if kind == "range":
+        lo, hi = rule[1], rule[2]
+        if not (lo <= value <= hi):
+            raise ValueError(f"{key} must be between {lo} and {hi}, got {value}")
+    elif kind == "enum":
+        allowed = rule[1]
+        if value not in allowed:
+            raise ValueError(f"{key} must be one of {sorted(allowed)}, got {value!r}")
+
+
+def get_config_value(config: AppConfig, key: str) -> object:
+    """Get a config value by dotted key (e.g. ``"web.port"``).
+
+    Raises:
+        KeyError: If the section or field is unknown.
+    """
+    parts = key.split(".", 1)
+    if len(parts) != 2:
+        raise KeyError(f"Invalid key format: {key!r}. Expected 'section.field'.")
+    section, field_name = parts
+    try:
+        section_obj = getattr(config, section)
+    except AttributeError:
+        raise KeyError(f"Unknown config section: {section!r}")
+    try:
+        return getattr(section_obj, field_name)
+    except AttributeError:
+        raise KeyError(f"Unknown field {field_name!r} in section {section!r}")
+
+
+def set_config_value(
+    key: str, raw_value: str, config_path: Path | None = None
+) -> object:
+    """Validate, coerce, and persist a config value to the TOML file.
+
+    Creates the file and parent directories if they don't exist.
+
+    Args:
+        key: Dotted key, e.g. ``"web.port"``.
+        raw_value: Raw CLI string to set.
+        config_path: Path to the TOML file. Defaults to ``DEFAULT_CONFIG_PATH``.
+
+    Returns:
+        The coerced Python value that was written.
+
+    Raises:
+        KeyError: Unknown key.
+        ValueError: Invalid value.
+    """
+    keys = get_config_keys()
+    if key not in keys:
+        raise KeyError(f"Unknown config key: {key!r}")
+
+    target_type = keys[key]
+    value = coerce_value(raw_value, target_type)
+
+    # Case normalization for enum-like fields
+    if key in ("logging.level", "game_analysis.min_classification") and isinstance(value, str):
+        value = value.upper()
+
+    _validate_value(key, value)
+
+    # Path expansion
+    if key in ("database.path", "tablebase.syzygy_path") and isinstance(value, str):
+        value = str(Path(value).expanduser())
+
+    # Read existing TOML
+    path = config_path or DEFAULT_CONFIG_PATH
+    data: dict = {}
+    if path.is_file():
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+
+    # Update nested dict
+    section, field_name = key.split(".", 1)
+    if section not in data:
+        data[section] = {}
+    data[section][field_name] = value
+
+    # Write back
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_serialize_toml(data))
+
+    return value
+
+
+def reset_config_value(
+    key: str | None = None, config_path: Path | None = None
+) -> None:
+    """Reset a config key to its default, or reset the entire file.
+
+    Args:
+        key: Dotted key to reset. If ``None``, resets the entire config file
+            to the commented default template.
+        config_path: Path to the TOML file. Defaults to ``DEFAULT_CONFIG_PATH``.
+
+    Raises:
+        KeyError: Unknown key.
+    """
+    path = config_path or DEFAULT_CONFIG_PATH
+
+    if key is None:
+        # Full reset — restore the commented default template
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(generate_default_config())
+        return
+
+    keys = get_config_keys()
+    if key not in keys:
+        raise KeyError(f"Unknown config key: {key!r}")
+
+    # Remove just this key from the TOML file
+    data: dict = {}
+    if path.is_file():
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+
+    section, field_name = key.split(".", 1)
+    if section in data and field_name in data[section]:
+        del data[section][field_name]
+        # Remove empty sections
+        if not data[section]:
+            del data[section]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if data:
+        path.write_text(_serialize_toml(data))
+    else:
+        # All keys removed → write empty file so defaults take effect
+        path.write_text("")
