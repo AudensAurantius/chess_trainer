@@ -202,6 +202,23 @@ tablebase fen *args:
 tablebase-interactive fen="" *args:
     uv run {{ project_name }} tablebase {{ if fen != "" { '"' + fen + '"' } else { "" } }} --interactive {{ args }}
 
+# ─── endgame-masters ────────────────────────────────────────────────────────
+
+[group: 'endgame-masters']
+[doc('Browse master games with endgame tablebase eval')]
+endgame-masters fen="" *args:
+    uv run {{ project_name }} endgame-masters {{ if fen != "" { '"' + fen + '"' } else { "" } }} {{ args }}
+
+[group: 'endgame-masters']
+[doc('Replay a master game endgame interactively')]
+endgame-replay fen *args:
+    uv run {{ project_name }} endgame-masters "{{ fen }}" --replay {{ args }}
+
+[group: 'endgame-masters']
+[doc('Generate exercises from master game endgames')]
+endgame-generate fen *args:
+    uv run {{ project_name }} endgame-masters "{{ fen }}" --generate {{ args }}
+
 # ─── config ───────────────────────────────────────────────────────────────────
 
 [group: 'config']

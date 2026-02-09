@@ -939,10 +939,20 @@ def explore(
     parsed_speeds = tuple(s.strip() for s in speeds.split(",")) if speeds else None
     parsed_ratings = tuple(int(r.strip()) for r in ratings.split(",")) if ratings else None
 
-    has_filter = any(
-        v is not None
-        for v in (parsed_speeds, parsed_ratings, min_white_pct, min_draw_pct, max_draw_pct, min_black_pct)
-    ) or repertoire
+    has_filter = (
+        any(
+            v is not None
+            for v in (
+                parsed_speeds,
+                parsed_ratings,
+                min_white_pct,
+                min_draw_pct,
+                max_draw_pct,
+                min_black_pct,
+            )
+        )
+        or repertoire
+    )
 
     explorer_filter = None
     if has_filter:
@@ -1769,6 +1779,201 @@ def _interactive_tablebase(board: chess.Board, tb_mgr) -> None:
         board.push(move)
         move_stack.append(move)
         console.print()
+
+
+@app.command("endgame-masters")
+def endgame_masters(
+    fen: str = typer.Argument(None, help="FEN to search from"),
+    type_key: str = typer.Option(
+        None, "--type", "-t", help="Endgame type (kpk, rook, bishop, etc.)"
+    ),
+    top_games: int = typer.Option(15, "--top-games", "-n"),
+    replay: bool = typer.Option(False, "--replay", "-r", help="Interactive replay mode"),
+    generate: bool = typer.Option(False, "--generate", "-g", help="Generate exercises"),
+    max_exercises: int = typer.Option(5, "--max-exercises"),
+    syzygy_path: str | None = typer.Option(None, "--syzygy"),
+    db: Path | None = typer.Option(None, "--db"),
+):
+    """Browse master games with endgame tablebase evaluation."""
+    from ..endgame_masters import (
+        FetcherError,
+        build_endgame_phase,
+        find_endgame_games,
+    )
+    from ..tablebase import TablebaseError, TablebaseManager
+
+    if not fen and not type_key:
+        console.print("[red]Provide a FEN or use --type (kpk, rook, bishop, etc.).[/red]")
+        raise typer.Exit(1)
+
+    cfg = _get_config()
+    tb_path = syzygy_path or cfg.tablebase.syzygy_path
+
+    try:
+        with console.status("Searching for master games with endgame phases..."):
+            games = find_endgame_games(fen=fen, type_key=type_key, top_games=top_games)
+    except (FetcherError, KeyError) as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if not games:
+        console.print("[yellow]No master games with endgames found.[/yellow]")
+        return
+
+    console.print(f"Found [bold]{len(games)}[/bold] games with endgame phases.\n")
+
+    try:
+        with TablebaseManager(
+            syzygy_path=tb_path,
+            use_lichess_fallback=cfg.tablebase.use_lichess_fallback,
+            max_pieces=cfg.tablebase.max_pieces,
+        ) as tb_mgr:
+            # Build annotated phases
+            phases: list = []
+            with console.status("Annotating endgame positions with tablebase..."):
+                for info, game_obj in games:
+                    pgn_text = ""  # We already have the parsed game
+                    phase = build_endgame_phase(info, pgn_text, game_obj, tb_mgr)
+                    if phase is not None:
+                        phases.append(phase)
+
+            if not phases:
+                console.print("[yellow]No tablebase-eligible endgame positions found.[/yellow]")
+                return
+
+            if replay:
+                _replay_endgame(phases, tb_mgr)
+            elif generate:
+                _generate_endgame_exercises(phases, tb_mgr, db, max_exercises)
+            else:
+                _browse_endgame_masters(phases)
+
+    except TablebaseError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+
+def _browse_endgame_masters(phases: list) -> None:
+    """Display a summary table of master games with endgame phases."""
+    from ..endgame_masters import classify_endgame_type
+
+    table = Table(title="Master Games with Endgame Phases")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Players", style="bold")
+    table.add_column("Year", justify="right")
+    table.add_column("Result")
+    table.add_column("Endgame Type")
+    table.add_column("Critical", justify="right", style="yellow")
+    table.add_column("Positions", justify="right")
+
+    for i, phase in enumerate(phases, 1):
+        info = phase.game_info
+        result = "1-0" if info.winner == "white" else "0-1" if info.winner == "black" else "1/2"
+        players = f"{info.white} ({info.white_rating}) vs {info.black} ({info.black_rating})"
+
+        # Classify from the first annotated position
+        eg_type = ""
+        if phase.positions:
+            board = chess.Board(phase.positions[0].fen)
+            eg_type = classify_endgame_type(board)
+
+        table.add_row(
+            str(i),
+            players,
+            str(info.year),
+            result,
+            eg_type,
+            str(len(phase.critical_moments)),
+            str(len(phase.positions)),
+        )
+
+    console.print(table)
+
+
+def _replay_endgame(phases: list, tb_mgr) -> None:
+    """Interactive replay of endgame positions from a master game."""
+    if not phases:
+        return
+
+    # Pick the first phase for replay (could prompt for selection)
+    phase = phases[0]
+    positions = phase.positions
+
+    if not positions:
+        console.print("[yellow]No annotated positions to replay.[/yellow]")
+        return
+
+    info = phase.game_info
+    console.print(f"[bold]Replaying:[/bold] {info.white} vs {info.black} ({info.year})\n")
+
+    idx = 0
+    while 0 <= idx < len(positions):
+        pos = positions[idx]
+        board = chess.Board(pos.fen)
+        flipped = board.turn == chess.BLACK
+
+        console.print(render_board(board, flipped=flipped))
+        console.print()
+
+        wdl_style = _wdl_style(pos.wdl)
+        console.print(f"[bold]Position {idx + 1}/{len(positions)}[/bold] (ply {pos.ply})")
+        console.print(f"WDL: [{wdl_style}]{pos.category.upper()}[/{wdl_style}]", end="")
+        if pos.dtz is not None:
+            console.print(f" (DTZ: {pos.dtz})", end="")
+        console.print()
+
+        if pos.move_san:
+            console.print(f"Master played: [bold]{pos.move_san}[/bold]", end="")
+            if pos.wdl_after is not None:
+                after_style = _wdl_style(pos.wdl_after)
+                if pos.wdl_after < pos.wdl:
+                    console.print(f" [{after_style}]WORSENED[/{after_style}]", end="")
+                elif pos.wdl_after >= pos.wdl:
+                    console.print(f" [{after_style}]OK[/{after_style}]", end="")
+            console.print()
+
+        if pos.is_critical:
+            console.print("[yellow bold]** Critical moment **[/yellow bold]")
+
+        console.print("\n[dim]Enter: next, 'b': back, 'q': quit[/dim]")
+        text = input("> ").strip().lower()
+
+        if text in ("q", "quit", "exit"):
+            break
+        elif text in ("b", "back"):
+            idx = max(0, idx - 1)
+        else:
+            idx += 1
+
+        console.print()
+
+
+def _generate_endgame_exercises(phases: list, tb_mgr, db_path, max_exercises: int) -> None:
+    """Generate and store EndgameExercise items from annotated phases."""
+    from ..endgame_masters import generate_endgame_exercises
+
+    all_exercises = []
+    for phase in phases:
+        for exercise in generate_endgame_exercises(phase, tb_mgr, max_exercises=max_exercises):
+            all_exercises.append(exercise)
+
+    if not all_exercises:
+        console.print("[yellow]No critical moments found for exercise generation.[/yellow]")
+        return
+
+    with get_repo(db_path) as repo:
+        added = 0
+        for exercise in all_exercises:
+            existing = repo.exercises.get(exercise.id)
+            if not existing:
+                repo.exercises.add(exercise)
+                repo.cards.get_or_create(exercise.id)
+                added += 1
+
+    console.print(
+        f"[green]\u2713[/green] Generated {added} new exercises "
+        f"({len(all_exercises)} total, {len(all_exercises) - added} already existed)"
+    )
 
 
 @app.command()
