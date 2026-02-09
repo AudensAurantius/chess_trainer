@@ -496,10 +496,193 @@ def config_show() -> None:
             f"[bold]training.interleave_new[/bold] = {cfg.training.interleave_new}\n"
             f"[bold]logging.level[/bold] = {cfg.logging.level}\n"
             f"[bold]web.host[/bold] = {cfg.web.host}\n"
-            f"[bold]web.port[/bold] = {cfg.web.port}",
+            f"[bold]web.port[/bold] = {cfg.web.port}\n"
+            f"[bold]engine.path[/bold] = {cfg.engine.path or '(auto-detect)'}\n"
+            f"[bold]engine.hash_mb[/bold] = {cfg.engine.hash_mb}\n"
+            f"[bold]engine.threads[/bold] = {cfg.engine.threads}\n"
+            f"[bold]engine.default_depth[/bold] = {cfg.engine.default_depth}\n"
+            f"[bold]engine.default_multipv[/bold] = {cfg.engine.default_multipv}",
             title="Effective Configuration",
         )
     )
+
+
+def _parse_pgn_to_board(pgn_text: str) -> chess.Board:
+    """Parse a PGN string into a board at the final position.
+
+    Accepts either a file path or inline PGN text.
+
+    Raises:
+        typer.BadParameter: If the PGN cannot be parsed.
+    """
+    import io
+
+    import chess.pgn
+
+    pgn_input = pgn_text
+    pgn_path = Path(pgn_text)
+    if pgn_path.is_file():
+        pgn_input = pgn_path.read_text()
+
+    game = chess.pgn.read_game(io.StringIO(pgn_input))
+    if game is None:
+        raise typer.BadParameter(f"Could not parse PGN: {pgn_text[:80]}")
+
+    board = game.board()
+    for move in game.mainline_moves():
+        board.push(move)
+    return board
+
+
+def _format_score(line) -> str:
+    """Format an AnalysisLine score for display."""
+    if line.score_mate is not None:
+        return f"M{line.score_mate}" if line.score_mate > 0 else f"-M{abs(line.score_mate)}"
+    cp = line.score_cp or 0
+    return f"{cp / 100:+.2f}"
+
+
+def _static_analysis(board: chess.Board, result, *, flipped: bool = False) -> None:
+    """Display board and analysis lines as a Rich table."""
+    console.print(render_board(board, flipped=flipped))
+    console.print()
+
+    table = Table(title=f"Analysis (depth {result.depth})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Score", justify="right", style="bold")
+    table.add_column("Line", no_wrap=False)
+
+    for line in result.lines:
+        # Format the PV in SAN
+        temp = board.copy()
+        san_moves = []
+        for move in line.pv[:12]:  # Show up to 12 half-moves
+            if temp.turn == chess.WHITE:
+                san_moves.append(f"{temp.fullmove_number}. {temp.san(move)}")
+            else:
+                if not san_moves:
+                    san_moves.append(f"{temp.fullmove_number}... {temp.san(move)}")
+                else:
+                    san_moves.append(temp.san(move))
+            temp.push(move)
+
+        score_str = _format_score(line)
+        pv_str = " ".join(san_moves)
+
+        # Color-code the score
+        if line.score_mate is not None:
+            score_style = "green" if line.score_mate > 0 else "red"
+        elif (line.score_cp or 0) > 50:
+            score_style = "green"
+        elif (line.score_cp or 0) < -50:
+            score_style = "red"
+        else:
+            score_style = "yellow"
+
+        table.add_row(
+            str(line.multipv_rank),
+            f"[{score_style}]{score_str}[/{score_style}]",
+            pv_str,
+        )
+
+    console.print(table)
+
+
+def _interactive_analysis(board: chess.Board, engine_mgr) -> None:
+    """Interactive analysis REPL: play moves to explore, 'back' to undo, 'quit' to exit."""
+    from ..analysis import EngineError
+
+    cfg = _get_config()
+    depth = cfg.engine.default_depth
+    multipv = cfg.engine.default_multipv
+    move_stack: list[chess.Move] = []
+
+    while True:
+        flipped = board.turn == chess.BLACK
+        try:
+            result = engine_mgr.analyze(board, depth=depth, multipv=multipv)
+        except EngineError as e:
+            console.print(f"[red]Analysis error: {e}[/red]")
+            break
+
+        _static_analysis(board, result, flipped=flipped)
+
+        console.print(
+            "\n[dim]Enter a move (SAN/UCI), 'back' to undo, 'quit' to exit:[/dim]"
+        )
+        text = input("> ").strip()
+
+        if text.lower() in ("q", "quit", "exit"):
+            break
+        elif text.lower() in ("b", "back", "undo"):
+            if move_stack:
+                board.pop()
+                move_stack.pop()
+                console.print("[dim]Move undone.[/dim]\n")
+            else:
+                console.print("[yellow]No moves to undo.[/yellow]\n")
+            continue
+
+        move = _parse_move(board, text)
+        if move is None:
+            console.print("[red]Invalid move. Try again.[/red]\n")
+            continue
+
+        board.push(move)
+        move_stack.append(move)
+        console.print()
+
+
+@app.command()
+def analyze(
+    fen: str = typer.Argument(None, help="FEN string to analyze (starting position if omitted)"),
+    pgn: str = typer.Option(None, "--pgn", help="PGN string or file path to analyze"),
+    depth: int | None = typer.Option(None, "--depth", "-d", help="Search depth"),
+    multipv: int | None = typer.Option(None, "--multipv", "-m", help="Number of principal variations"),
+    engine_path: str | None = typer.Option(None, "--engine", "-e", help="Path to UCI engine binary"),
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive exploration mode"),
+):
+    """Analyze a chess position with a UCI engine."""
+    from ..analysis import EngineError, EngineManager
+
+    cfg = _get_config()
+    analysis_depth = depth or cfg.engine.default_depth
+    analysis_multipv = multipv or cfg.engine.default_multipv
+    engine = engine_path or cfg.engine.path
+
+    # Determine the board position
+    if pgn:
+        try:
+            board = _parse_pgn_to_board(pgn)
+        except typer.BadParameter as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+    elif fen:
+        try:
+            board = chess.Board(fen)
+        except ValueError:
+            console.print(f"[red]Invalid FEN: {fen}[/red]")
+            raise typer.Exit(1)
+    else:
+        board = chess.Board()
+
+    try:
+        with EngineManager(
+            path=engine,
+            hash_mb=cfg.engine.hash_mb,
+            threads=cfg.engine.threads,
+        ) as engine_mgr:
+            if interactive:
+                _interactive_analysis(board, engine_mgr)
+            else:
+                result = engine_mgr.analyze(
+                    board, depth=analysis_depth, multipv=analysis_multipv
+                )
+                flipped = board.turn == chess.BLACK
+                _static_analysis(board, result, flipped=flipped)
+    except EngineError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
