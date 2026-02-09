@@ -143,6 +143,31 @@ import-games-engine username *args:
 explore fen="" *args:
     uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} {{ args }}
 
+[group: 'explore']
+[doc('Explore filtered by speeds (e.g. just explore-speed blitz,rapid)')]
+explore-speed speeds fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} --speeds {{ speeds }} {{ args }}
+
+[group: 'explore']
+[doc('Explore filtered by rating brackets (e.g. just explore-rating 1600,1800,2000)')]
+explore-rating ratings fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} --ratings {{ ratings }} {{ args }}
+
+[group: 'explore']
+[doc('Explore with repertoire overlay showing book moves')]
+explore-repertoire fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} --repertoire {{ args }}
+
+[group: 'explore']
+[doc('Explore moves where white scores well (min white win %)')]
+explore-white min_pct="50" fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} --min-white-pct {{ min_pct }} {{ args }}
+
+[group: 'explore']
+[doc('Explore moves where black scores well (min black win %)')]
+explore-black min_pct="50" fen="" *args:
+    uv run {{ project_name }} explore {{ if fen != "" { '"' + fen + '"' } else { "" } }} --min-black-pct {{ min_pct }} {{ args }}
+
 # ─── book ────────────────────────────────────────────────────────────────────
 
 [group: 'book']
