@@ -1,0 +1,127 @@
+# Chess Trainer — project task runner
+# https://github.com/casey/just
+
+set dotenv-load := false
+
+# Project paths
+src          := "src"
+tests        := "tests"
+project_name := "chess-trainer"
+
+# Defaults
+default_depth   := "20"
+default_multipv := "3"
+default_count   := "20"
+default_host    := "127.0.0.1"
+default_port    := "8000"
+
+# ─── build ────────────────────────────────────────────────────────────────────
+
+[group: 'build']
+[doc('Install all dependencies (core + dev + web)')]
+install:
+    uv sync --all-extras
+
+[group: 'build']
+[doc('Build the package')]
+build:
+    uv build
+
+[group: 'build']
+[doc('Publish the package to PyPI')]
+publish: build
+    uv publish
+
+[group: 'build']
+[doc('Remove build artifacts and caches')]
+clean:
+    rm -rf dist/ build/ .pytest_cache/ .ruff_cache/
+    find . -type d -name __pycache__ -not -path './.direnv/*' -not -path './.venv/*' -exec rm -rf {} +
+
+# ─── lint ─────────────────────────────────────────────────────────────────────
+
+[group: 'lint']
+[doc('Run ruff linter and fix auto-fixable issues')]
+lint *args:
+    uv run ruff check --fix {{ args }} {{ src }} {{ tests }}
+
+[group: 'lint']
+[doc('Run ruff formatter')]
+fmt *args:
+    uv run ruff format {{ args }} {{ src }} {{ tests }}
+
+[group: 'lint']
+[doc('Check formatting and lint without modifying files')]
+check:
+    uv run ruff format --check {{ src }} {{ tests }}
+    uv run ruff check {{ src }} {{ tests }}
+
+# ─── test ─────────────────────────────────────────────────────────────────────
+
+[group: 'test']
+[doc('Run the full test suite')]
+test *args:
+    uv run pytest {{ tests }} -v {{ args }}
+
+[group: 'test']
+[doc('Run tests matching a keyword expression (e.g. just test-k analysis)')]
+test-k pattern *args:
+    uv run pytest {{ tests }} -v -k "{{ pattern }}" {{ args }}
+
+[group: 'test']
+[doc('Run tests with coverage report')]
+coverage *args:
+    uv run pytest {{ tests }} --cov={{ src }} --cov-report=term-missing {{ args }}
+
+# ─── run ──────────────────────────────────────────────────────────────────────
+
+[group: 'run']
+[doc('Start the web training interface')]
+web host=default_host port=default_port:
+    uv run {{ project_name }} web --host {{ host }} --port {{ port }}
+
+[group: 'run']
+[doc('Start an interactive training session')]
+train *args:
+    uv run {{ project_name }} train {{ args }}
+
+[group: 'run']
+[doc('Show training statistics')]
+stats *args:
+    uv run {{ project_name }} stats {{ args }}
+
+# ─── import ───────────────────────────────────────────────────────────────────
+
+[group: 'import']
+[doc('Import tactical puzzles from Lichess')]
+import-puzzles count=default_count *args:
+    uv run {{ project_name }} import-puzzles --count {{ count }} {{ args }}
+
+[group: 'import']
+[doc('Create review cards for all exercises without one')]
+init-cards *args:
+    uv run {{ project_name }} init-cards {{ args }}
+
+# ─── analyze ──────────────────────────────────────────────────────────────────
+
+[group: 'analyze']
+[doc('Analyze a FEN position (starting position if omitted)')]
+analyze fen="" depth=default_depth multipv=default_multipv *args:
+    uv run {{ project_name }} analyze {{ if fen != "" { '"' + fen + '"' } else { "" } }} --depth {{ depth }} --multipv {{ multipv }} {{ args }}
+
+[group: 'analyze']
+[doc('Start interactive analysis (play moves, undo, explore)')]
+analyze-interactive fen="" *args:
+    uv run {{ project_name }} analyze {{ if fen != "" { '"' + fen + '"' } else { "" } }} --interactive {{ args }}
+
+# ─── config ───────────────────────────────────────────────────────────────────
+
+[group: 'config']
+[doc('Show effective configuration')]
+config-show:
+    uv run {{ project_name }} config show
+
+[group: 'config']
+[doc('Generate default config file at ~/.chess-trainer/config.toml')]
+config-init:
+    uv run {{ project_name }} config init
