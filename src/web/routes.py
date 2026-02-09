@@ -147,3 +147,49 @@ async def api_stats(request: Request):
     """Get overall statistics."""
     manager = _manager(request)
     return JSONResponse(manager.get_stats())
+
+
+# --- Analytics endpoints ---
+
+
+@router.get("/api/analytics/accuracy")
+async def api_analytics_accuracy(request: Request):
+    """Get accuracy trend data."""
+    manager = _manager(request)
+    days = int(request.query_params.get("days", "30"))
+    granularity = request.query_params.get("granularity", "day")
+    exercise_type = request.query_params.get("exercise_type") or None
+
+    result = manager.get_accuracy_trend(
+        days=days, granularity=granularity, exercise_type=exercise_type
+    )
+    return JSONResponse(result)
+
+
+@router.get("/api/analytics/weak-areas")
+async def api_analytics_weak_areas(request: Request):
+    """Get weak areas data."""
+    manager = _manager(request)
+    min_reviews = int(request.query_params.get("min_reviews", "5"))
+    limit = int(request.query_params.get("limit", "20"))
+
+    result = manager.get_weak_areas(min_reviews=min_reviews, limit=limit)
+    return JSONResponse(result)
+
+
+@router.get("/api/analytics/streaks")
+async def api_analytics_streaks(request: Request):
+    """Get streak data."""
+    manager = _manager(request)
+    lookback_days = int(request.query_params.get("lookback_days", "90"))
+
+    result = manager.get_streaks(lookback_days=lookback_days)
+    return JSONResponse(result)
+
+
+@router.get("/api/analytics/retention")
+async def api_analytics_retention(request: Request):
+    """Get retention curve data."""
+    manager = _manager(request)
+    result = manager.get_retention_curve()
+    return JSONResponse(result)

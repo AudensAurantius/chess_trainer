@@ -164,6 +164,16 @@ class Repository:
             ON explorer_cache(fetched_at)
         """)
 
+        # Analytics indexes for review_history queries
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_review_history_reviewed_at
+            ON review_history(reviewed_at)
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_review_history_exercise_id
+            ON review_history(exercise_id)
+        """)
+
     def close(self) -> None:
         """Close database connection."""
         if self._conn:

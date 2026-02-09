@@ -461,6 +461,191 @@ def init_cards(
         console.print(f"[green]\u2713[/green] Created {created} new review cards")
 
 
+@app.command()
+def progress(
+    accuracy: bool = typer.Option(False, "--accuracy", "-a", help="Show accuracy trend"),
+    weak: bool = typer.Option(False, "--weak", "-w", help="Show weak areas"),
+    streaks: bool = typer.Option(False, "--streaks", "-s", help="Show streaks"),
+    retention: bool = typer.Option(False, "--retention", "-r", help="Show retention curve"),
+    exercise_type: str | None = typer.Option(None, "--type", "-t", help="Filter by exercise type"),
+    days: int = typer.Option(30, "--days", "-d", help="Lookback period in days"),
+    granularity: str = typer.Option("day", "--granularity", "-g", help="Granularity: day or week"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Show training progress and analytics."""
+    from ..analytics import AnalyticsStore
+
+    show_all = not (accuracy or weak or streaks or retention)
+
+    with get_repo(db) as repo:
+        store = AnalyticsStore(repo.conn)
+
+        if show_all or accuracy:
+            _show_accuracy(store, granularity=granularity, exercise_type=exercise_type, days=days)
+
+        if show_all or weak:
+            _show_weak_areas(store)
+
+        if show_all or streaks:
+            _show_streaks(store)
+
+        if show_all or retention:
+            _show_retention(store)
+
+
+def _show_accuracy(
+    store,
+    *,
+    granularity: str = "day",
+    exercise_type: str | None = None,
+    days: int = 30,
+) -> None:
+    """Display accuracy trend as a Rich table."""
+    trend = store.accuracy_trend(granularity=granularity, exercise_type=exercise_type, days=days)
+
+    if not trend.points:
+        console.print("[yellow]No review data yet.[/yellow]")
+        return
+
+    table = Table(title=f"Accuracy Trend ({trend.granularity}, last {days} days)")
+    table.add_column("Period", style="cyan")
+    table.add_column("Reviews", justify="right")
+    table.add_column("Correct", justify="right")
+    table.add_column("Accuracy", justify="right")
+    table.add_column("Trend", justify="center")
+
+    prev_acc = None
+    for point in trend.points:
+        if prev_acc is not None:
+            if point.accuracy > prev_acc:
+                arrow = "[green]\u2191[/green]"
+            elif point.accuracy < prev_acc:
+                arrow = "[red]\u2193[/red]"
+            else:
+                arrow = "[yellow]\u2192[/yellow]"
+        else:
+            arrow = ""
+
+        acc_style = "green" if point.accuracy >= 70 else "yellow" if point.accuracy >= 50 else "red"
+        table.add_row(
+            str(point.period),
+            str(point.total_reviews),
+            str(point.correct_count),
+            f"[{acc_style}]{point.accuracy:.1f}%[/{acc_style}]",
+            arrow,
+        )
+        prev_acc = point.accuracy
+
+    console.print(table)
+    console.print(
+        f"[bold]Overall:[/bold] {trend.overall_accuracy:.1f}% ({trend.total_reviews} reviews)\n"
+    )
+
+
+def _show_weak_areas(store) -> None:
+    """Display weak areas as a color-coded Rich table."""
+    areas = store.weak_areas()
+
+    if not areas:
+        console.print("[yellow]No review data yet.[/yellow]")
+        return
+
+    table = Table(title="Weak Areas (lowest accuracy first)")
+    table.add_column("Area", style="bold")
+    table.add_column("Category", style="dim")
+    table.add_column("Reviews", justify="right")
+    table.add_column("Accuracy", justify="right")
+    table.add_column("Lapses", justify="right")
+    table.add_column("Cards", justify="right")
+
+    for area in areas:
+        acc_style = "green" if area.accuracy >= 70 else "yellow" if area.accuracy >= 50 else "red"
+        table.add_row(
+            area.name,
+            area.category,
+            str(area.total_reviews),
+            f"[{acc_style}]{area.accuracy:.1f}%[/{acc_style}]",
+            f"{area.avg_lapses:.1f}",
+            str(area.card_count),
+        )
+
+    console.print(table)
+    console.print()
+
+
+def _show_streaks(store) -> None:
+    """Display streak info as a Rich panel with activity bar."""
+    info = store.streaks()
+
+    if info.total_active_days == 0:
+        console.print("[yellow]No review data yet.[/yellow]")
+        return
+
+    # Build a 14-day activity bar
+    today = __import__("datetime").date.today()
+    activity_map = {a.day: a.review_count for a in info.daily_activity}
+    bar_chars = []
+    for i in range(13, -1, -1):
+        day = today - __import__("datetime").timedelta(days=i)
+        count = activity_map.get(day, 0)
+        if count == 0:
+            bar_chars.append("[dim]\u2581[/dim]")
+        elif count < 5:
+            bar_chars.append("[green]\u2583[/green]")
+        elif count < 15:
+            bar_chars.append("[green]\u2585[/green]")
+        else:
+            bar_chars.append("[green bold]\u2588[/green bold]")
+
+    bar = "".join(bar_chars)
+
+    console.print(
+        Panel(
+            f"[bold]Current streak:[/bold] {info.current_streak} days\n"
+            f"[bold]Longest streak:[/bold] {info.longest_streak} days\n"
+            f"[bold]Active days:[/bold] {info.total_active_days}\n\n"
+            f"Last 14 days: {bar}",
+            title="Streaks",
+        )
+    )
+    console.print()
+
+
+def _show_retention(store) -> None:
+    """Display retention curve as a Rich table."""
+    points = store.retention_curve()
+
+    if not points:
+        console.print("[yellow]No review data yet.[/yellow]")
+        return
+
+    table = Table(title="Retention Curve (by repetition count)")
+    table.add_column("Reps", justify="right", style="cyan")
+    table.add_column("Cards", justify="right")
+    table.add_column("Stability", justify="right")
+    table.add_column("Recall", justify="right")
+    table.add_column("Predicted", justify="right")
+
+    for point in points:
+        recall_style = (
+            "green"
+            if point.actual_recall_rate >= 80
+            else "yellow"
+            if point.actual_recall_rate >= 60
+            else "red"
+        )
+        table.add_row(
+            str(point.reps),
+            str(point.card_count),
+            f"{point.avg_stability_days:.1f}d",
+            f"[{recall_style}]{point.actual_recall_rate:.1f}%[/{recall_style}]",
+            f"{point.predicted_retrievability:.1f}%",
+        )
+
+    console.print(table)
+    console.print()
+
+
 config_app = typer.Typer(help="Configuration management")
 app.add_typer(config_app, name="config")
 

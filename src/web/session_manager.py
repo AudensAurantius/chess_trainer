@@ -315,3 +315,85 @@ class SessionManager:
             "exercise_count": exercise_count,
             **card_stats,
         }
+
+    def _get_analytics_store(self):
+        """Get an AnalyticsStore instance."""
+        from ..analytics import AnalyticsStore
+
+        repo = self._open_repo()
+        return AnalyticsStore(repo.conn)
+
+    def get_accuracy_trend(
+        self,
+        days: int = 30,
+        granularity: str = "day",
+        exercise_type: str | None = None,
+    ) -> dict:
+        """Get accuracy trend data for the web API."""
+        store = self._get_analytics_store()
+        trend = store.accuracy_trend(
+            granularity=granularity, exercise_type=exercise_type, days=days
+        )
+        return {
+            "labels": [str(p.period) for p in trend.points],
+            "datasets": [
+                {
+                    "total_reviews": p.total_reviews,
+                    "correct_count": p.correct_count,
+                    "accuracy": p.accuracy,
+                }
+                for p in trend.points
+            ],
+            "overall_accuracy": trend.overall_accuracy,
+            "total_reviews": trend.total_reviews,
+        }
+
+    def get_weak_areas(self, min_reviews: int = 5, limit: int = 20) -> dict:
+        """Get weak areas data for the web API."""
+        store = self._get_analytics_store()
+        areas = store.weak_areas(min_reviews=min_reviews, limit=limit)
+        return {
+            "areas": [
+                {
+                    "name": a.name,
+                    "category": a.category,
+                    "total_reviews": a.total_reviews,
+                    "correct_count": a.correct_count,
+                    "accuracy": a.accuracy,
+                    "avg_lapses": a.avg_lapses,
+                    "card_count": a.card_count,
+                }
+                for a in areas
+            ]
+        }
+
+    def get_streaks(self, lookback_days: int = 90) -> dict:
+        """Get streak data for the web API."""
+        store = self._get_analytics_store()
+        info = store.streaks(lookback_days=lookback_days)
+        return {
+            "current_streak": info.current_streak,
+            "longest_streak": info.longest_streak,
+            "total_active_days": info.total_active_days,
+            "daily_activity": [
+                {"day": str(a.day), "review_count": a.review_count} for a in info.daily_activity
+            ],
+        }
+
+    def get_retention_curve(self) -> dict:
+        """Get retention curve data for the web API."""
+        store = self._get_analytics_store()
+        points = store.retention_curve()
+        return {
+            "labels": [str(p.reps) for p in points],
+            "datasets": [
+                {
+                    "reps": p.reps,
+                    "card_count": p.card_count,
+                    "avg_stability_days": p.avg_stability_days,
+                    "actual_recall_rate": p.actual_recall_rate,
+                    "predicted_retrievability": p.predicted_retrievability,
+                }
+                for p in points
+            ],
+        }
