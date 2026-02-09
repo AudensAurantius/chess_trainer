@@ -64,6 +64,26 @@ class TestPages:
         res = client.get("/static/js/training.js")
         assert res.status_code == 200
 
+    def test_train_page_has_start_feedback_element(self, client):
+        """The start panel must contain a feedback div visible before session starts.
+
+        Regression test: previously, the empty-queue feedback message was
+        written to #feedback-area inside the hidden #session-panel, so users
+        saw nothing when clicking Start Training with no exercises.
+        """
+        res = client.get("/train")
+        assert 'id="start-feedback"' in res.text
+
+    def test_training_js_has_start_feedback_handler(self, client):
+        """training.js must use showStartFeedback for pre-session messages."""
+        res = client.get("/static/js/training.js")
+        assert "showStartFeedback" in res.text
+
+    def test_favicon_no_404(self, client):
+        """base.html should suppress the default favicon request."""
+        res = client.get("/train")
+        assert 'rel="icon"' in res.text
+
 
 class TestSessionAPI:
     def test_start_empty(self, client):
