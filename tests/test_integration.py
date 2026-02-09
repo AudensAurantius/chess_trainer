@@ -57,6 +57,7 @@ def config(tmp_path):
         "[training]\nmax_new_cards = 10\nmax_reviews = 50\n"
         "[scheduler]\nrequest_retention = 0.9\n"
     )
+    config_file.chmod(0o600)
     return load_config(config_file)
 
 

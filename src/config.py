@@ -6,8 +6,10 @@ Override chain: defaults → config file → environment variables → CLI flags
 from __future__ import annotations
 
 import os
+import stat
 import tomllib
 import types
+import warnings
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Union, get_args, get_origin, get_type_hints
@@ -277,6 +279,28 @@ def _apply_env(config: AppConfig) -> None:
             setter(val)
 
 
+def _secure_file(path: Path) -> None:
+    """Set file permissions to owner-only (0600) for secret protection."""
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass  # Windows or other platforms without Unix permissions
+
+
+def _check_permissions(path: Path) -> None:
+    """Warn if config file is readable by group or others."""
+    try:
+        mode = path.stat().st_mode
+        if mode & (stat.S_IRGRP | stat.S_IROTH):
+            warnings.warn(
+                f"Config file {path} has overly permissive permissions "
+                f"({stat.filemode(mode)}). Consider running: chmod 600 {path}",
+                stacklevel=3,
+            )
+    except OSError:
+        pass  # File doesn't exist or platform without Unix permissions
+
+
 def load_config(path: Path | None = None) -> AppConfig:
     """Load configuration with hierarchical overrides.
 
@@ -293,6 +317,7 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     config_path = path or DEFAULT_CONFIG_PATH
     if config_path.is_file():
+        _check_permissions(config_path)
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
         _apply_toml(config, data)
@@ -583,6 +608,7 @@ def set_config_value(
     # Write back
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_serialize_toml(data))
+    _secure_file(path)
 
     return value
 
@@ -606,6 +632,7 @@ def reset_config_value(
         # Full reset — restore the commented default template
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(generate_default_config())
+        _secure_file(path)
         return
 
     keys = get_config_keys()
@@ -631,3 +658,4 @@ def reset_config_value(
     else:
         # All keys removed → write empty file so defaults take effect
         path.write_text("")
+    _secure_file(path)

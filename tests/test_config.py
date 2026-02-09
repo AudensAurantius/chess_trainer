@@ -8,6 +8,8 @@ from src.config import (
     AppConfig,
     _apply_env,
     _apply_toml,
+    _check_permissions,
+    _secure_file,
     _serialize_toml,
     _validate_value,
     coerce_value,
@@ -122,12 +124,14 @@ class TestLoadConfig:
     def test_load_from_file(self, tmp_path):
         config_file = tmp_path / "config.toml"
         config_file.write_text("[training]\nmax_new_cards = 42\n")
+        config_file.chmod(0o600)
         cfg = load_config(config_file)
         assert cfg.training.max_new_cards == 42
 
     def test_env_overrides_file(self, tmp_path, monkeypatch):
         config_file = tmp_path / "config.toml"
         config_file.write_text("[training]\nmax_new_cards = 42\n")
+        config_file.chmod(0o600)
         monkeypatch.setenv("CHESS_TRAINER_MAX_NEW_CARDS", "99")
         cfg = load_config(config_file)
         assert cfg.training.max_new_cards == 99
@@ -430,3 +434,75 @@ class TestResetConfigValue:
         reset_config_value("web.port", config_path=path)
         data = tomllib.loads(path.read_text())
         assert data["training"]["max_new_cards"] == 20
+
+
+class TestFilePermissions:
+    """Tests for secret file permission enforcement (S1)."""
+
+    def test_secure_file_sets_600(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text("[web]\nport = 8080\n")
+        path.chmod(0o644)
+        _secure_file(path)
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600
+
+    def test_secure_file_nonexistent_no_error(self, tmp_path):
+        """_secure_file silently ignores missing files."""
+        _secure_file(tmp_path / "nonexistent.toml")
+
+    def test_check_permissions_warns_on_group_readable(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text("[lichess]\ntoken = 'secret'\n")
+        path.chmod(0o640)
+        with pytest.warns(UserWarning, match="overly permissive"):
+            _check_permissions(path)
+
+    def test_check_permissions_warns_on_world_readable(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text("[lichess]\ntoken = 'secret'\n")
+        path.chmod(0o644)
+        with pytest.warns(UserWarning, match="overly permissive"):
+            _check_permissions(path)
+
+    def test_check_permissions_silent_on_600(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text("[lichess]\ntoken = 'secret'\n")
+        path.chmod(0o600)
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _check_permissions(path)
+
+    def test_check_permissions_nonexistent_no_error(self, tmp_path):
+        """_check_permissions silently ignores missing files."""
+        _check_permissions(tmp_path / "nonexistent.toml")
+
+    def test_load_config_warns_on_open_permissions(self, tmp_path):
+        path = tmp_path / "config.toml"
+        path.write_text('[web]\nport = 9000\n')
+        path.chmod(0o644)
+        with pytest.warns(UserWarning, match="overly permissive"):
+            config = load_config(path)
+        assert config.web.port == 9000
+
+    def test_set_config_value_secures_file(self, tmp_path):
+        path = tmp_path / "config.toml"
+        set_config_value("web.port", "9090", config_path=path)
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600
+
+    def test_reset_config_value_full_secures_file(self, tmp_path):
+        path = tmp_path / "config.toml"
+        reset_config_value(None, config_path=path)
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600
+
+    def test_reset_config_value_partial_secures_file(self, tmp_path):
+        path = tmp_path / "config.toml"
+        set_config_value("web.port", "9090", config_path=path)
+        set_config_value("training.max_new_cards", "50", config_path=path)
+        reset_config_value("web.port", config_path=path)
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600
