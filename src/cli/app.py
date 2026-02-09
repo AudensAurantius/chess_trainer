@@ -100,6 +100,41 @@ def import_puzzles(
                 console.print(f"  - {error}")
 
 
+@app.command("import-chesscom-puzzles")
+def import_chesscom_puzzles(
+    count: int = typer.Option(10, "--count", "-n", help="Number of random puzzles to import"),
+    daily: bool = typer.Option(True, "--daily/--no-daily", help="Include today's daily puzzle"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import puzzles from Chess.com."""
+    from ..importers.chesscom_puzzles import ChessComPuzzleImporter
+
+    cfg = _get_config()
+    importer = ChessComPuzzleImporter(user_agent=cfg.chesscom.user_agent)
+
+    with get_repo(db) as repo:
+        with console.status("Importing puzzles from Chess.com..."):
+            result = importer.import_to(
+                repo.exercises,
+                count=count,
+                include_daily=daily,
+            )
+
+        console.print(f"\n[green]\u2713[/green] {result}")
+
+        # Create review cards for new exercises
+        if result.total_added > 0:
+            for exercise in repo.exercises.search(source="chesscom"):
+                existing = repo.cards.get(exercise.id)
+                if not existing:
+                    repo.cards.get_or_create(exercise.id)
+
+        if result.errors:
+            console.print("[yellow]Errors:[/yellow]")
+            for error in result.errors[:5]:
+                console.print(f"  - {error}")
+
+
 @app.command()
 def stats(
     db: Path | None = typer.Option(None, "--db", help="Database path"),
@@ -694,6 +729,8 @@ def config_show() -> None:
             f"[bold]game_analysis.min_classification[/bold] = {cfg.game_analysis.min_classification}\n"
             f"[bold]game_analysis.max_exercises_per_game[/bold] = {cfg.game_analysis.max_exercises_per_game}\n"
             f"[bold]game_analysis.skip_first_plies[/bold] = {cfg.game_analysis.skip_first_plies}\n"
+            f"[bold]chesscom.user_agent[/bold] = {cfg.chesscom.user_agent}\n"
+            f"[bold]chesscom.request_delay[/bold] = {cfg.chesscom.request_delay}\n"
             f"[bold]tablebase.syzygy_path[/bold] = {cfg.tablebase.syzygy_path or '(not set)'}\n"
             f"[bold]tablebase.use_lichess_fallback[/bold] = {cfg.tablebase.use_lichess_fallback}\n"
             f"[bold]tablebase.max_pieces[/bold] = {cfg.tablebase.max_pieces}",
@@ -1323,11 +1360,15 @@ def book_train(
 def import_games(
     pgn: Path | None = typer.Option(None, "--pgn", help="Path to PGN file"),
     user: str | None = typer.Option(None, "--user", "-u", help="Lichess username"),
+    chesscom_user: str | None = typer.Option(None, "--chesscom-user", help="Chess.com username"),
     max_games: int = typer.Option(10, "--max-games", "-n", help="Max games to import"),
     server_evals: bool = typer.Option(
         False, "--server-evals", help="Use Lichess server evaluations (no engine needed)"
     ),
     color: str | None = typer.Option(None, "--color", help="Only exercises for white or black"),
+    time_class: str | None = typer.Option(
+        None, "--time-class", help="Filter by time class (bullet, blitz, rapid, daily)"
+    ),
     min_severity: str = typer.Option(
         None, "--min-severity", help="Minimum severity: INACCURACY, MISTAKE, or BLUNDER"
     ),
@@ -1344,11 +1385,20 @@ def import_games(
 ):
     """Import own games and generate exercises from mistakes."""
     from ..analysis import EngineError, EngineManager, MoveClassification
-    from ..importers.games import GameImporter
 
-    if not pgn and not user:
-        console.print("[red]Specify either --pgn or --user.[/red]")
+    sources = sum(1 for s in (pgn, user, chesscom_user) if s is not None)
+    if sources == 0:
+        console.print("[red]Specify --pgn, --user (Lichess), or --chesscom-user.[/red]")
         raise typer.Exit(1)
+    if sources > 1:
+        console.print("[red]--pgn, --user, and --chesscom-user are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+
+    if chesscom_user and server_evals:
+        console.print(
+            "[yellow]--server-evals is not available for Chess.com. Using engine.[/yellow]"
+        )
+        server_evals = False
 
     cfg = _get_config()
     ga = cfg.game_analysis
@@ -1373,10 +1423,6 @@ def import_games(
     need_engine = not server_evals
     engine_mgr = None
 
-    if need_engine and not pgn:
-        # For Lichess without server evals, we need an engine
-        need_engine = True
-
     if need_engine:
         engine_bin = engine_path or cfg.engine.path
         try:
@@ -1395,16 +1441,47 @@ def import_games(
                 raise typer.Exit(1)
 
     try:
-        importer = GameImporter(
-            engine_mgr,
-            depth=analysis_depth,
-            min_classification=min_class,
-            max_exercises=max_ex,
-            skip_first_plies=ga.skip_first_plies,
-        )
+        if chesscom_user:
+            from ..importers.chesscom_games import ChessComGameImporter
 
-        with get_repo(db) as repo:
-            fetch_kwargs: dict = {}
+            importer = ChessComGameImporter(
+                engine_mgr,
+                depth=analysis_depth,
+                min_classification=min_class,
+                max_exercises=max_ex,
+                skip_first_plies=ga.skip_first_plies,
+            )
+
+            fetch_kwargs: dict = {
+                "username": chesscom_user,
+                "max_games": max_games,
+                "user_agent": cfg.chesscom.user_agent,
+                "request_delay": cfg.chesscom.request_delay,
+            }
+            if color:
+                fetch_kwargs["color"] = color.lower()
+            if time_class:
+                fetch_kwargs["time_class"] = time_class
+            if since:
+                # Parse YYYY-MM-DD into year/month for Chess.com
+                parts = since.split("-")
+                if len(parts) >= 2:
+                    fetch_kwargs["since_year"] = int(parts[0])
+                    fetch_kwargs["since_month"] = int(parts[1])
+
+            source_tag = "chesscom"
+        else:
+            from ..importers.games import GameImporter
+
+            importer = GameImporter(
+                engine_mgr,
+                depth=analysis_depth,
+                min_classification=min_class,
+                max_exercises=max_ex,
+                skip_first_plies=ga.skip_first_plies,
+            )
+
+            fetch_kwargs = {}
             if pgn:
                 fetch_kwargs["pgn_path"] = pgn
             else:
@@ -1417,6 +1494,9 @@ def import_games(
             if color:
                 fetch_kwargs["color"] = color.lower()
 
+            source_tag = "game_analysis"
+
+        with get_repo(db) as repo:
             with console.status("Analyzing games and generating exercises..."):
                 result = importer.import_to(repo.exercises, **fetch_kwargs)
 
@@ -1424,7 +1504,7 @@ def import_games(
 
             # Create review cards for new exercises
             if result.total_added > 0:
-                for exercise in repo.exercises.search(source="game_analysis"):
+                for exercise in repo.exercises.search(source=source_tag):
                     existing = repo.cards.get(exercise.id)
                     if not existing:
                         repo.cards.get_or_create(exercise.id)
@@ -1442,6 +1522,9 @@ def import_games(
 def analyze_game(
     pgn: Path | None = typer.Option(None, "--pgn", help="Path to PGN file"),
     game_id: str | None = typer.Option(None, "--game-id", help="Lichess game ID"),
+    chesscom_game: str | None = typer.Option(
+        None, "--chesscom-game", help="Chess.com game URL or ID"
+    ),
     server_evals: bool = typer.Option(
         False, "--server-evals", help="Use Lichess server evaluations"
     ),
@@ -1460,9 +1543,19 @@ def analyze_game(
     )
     from ..importers.games import parse_pgn_games
 
-    if not pgn and not game_id:
-        console.print("[red]Specify either --pgn or --game-id.[/red]")
+    sources = sum(1 for s in (pgn, game_id, chesscom_game) if s is not None)
+    if sources == 0:
+        console.print("[red]Specify --pgn, --game-id (Lichess), or --chesscom-game.[/red]")
         raise typer.Exit(1)
+    if sources > 1:
+        console.print("[red]--pgn, --game-id, and --chesscom-game are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+
+    if chesscom_game and server_evals:
+        console.print(
+            "[yellow]--server-evals is not available for Chess.com. Using engine.[/yellow]"
+        )
+        server_evals = False
 
     cfg = _get_config()
     analysis_depth = depth or cfg.game_analysis.analysis_depth
@@ -1481,6 +1574,34 @@ def analyze_game(
             console.print("[red]No games found in PGN file.[/red]")
             raise typer.Exit(1)
         game = games[0]
+    elif chesscom_game:
+        from ..chesscom.api import ChessComError, get_chesscom
+
+        # Extract game ID from URL if needed
+        cc_game_id = chesscom_game.rstrip("/").split("/")[-1]
+
+        try:
+            # Chess.com provides PGN via the game callback endpoint
+            # For monthly archive games, we can fetch by the URL or we fetch the PGN directly
+            game_data = get_chesscom(
+                f"callback/{cc_game_id}",
+                user_agent=cfg.chesscom.user_agent,
+            )
+            pgn_text = game_data.get("pgn", "")
+        except ChessComError:
+            # Fallback: try to interpret chesscom_game as a full URL and inform user
+            console.print(
+                "[red]Could not fetch game from Chess.com. "
+                "Try exporting the PGN manually and use --pgn instead.[/red]"
+            )
+            raise typer.Exit(1)
+
+        if not pgn_text:
+            console.print("[red]No PGN data in Chess.com game response.[/red]")
+            raise typer.Exit(1)
+
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+        source_url = chesscom_game if chesscom_game.startswith("http") else None
     elif game_id:
         from ..lichess.api import get_game
 

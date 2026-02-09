@@ -103,11 +103,20 @@ class TablebaseConfig:
 
 
 @dataclass
+class ChessComConfig:
+    """Chess.com API settings."""
+
+    user_agent: str = "ChessTrainer/1.0 (github.com/user/chess_trainer)"
+    request_delay: float = 0.5  # Seconds between archive page fetches
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     lichess: LichessConfig = field(default_factory=LichessConfig)
+    chesscom: ChessComConfig = field(default_factory=ChessComConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -197,6 +206,13 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "skip_first_plies" in ga:
             config.game_analysis.skip_first_plies = int(ga["skip_first_plies"])
 
+    if "chesscom" in data:
+        cc = data["chesscom"]
+        if "user_agent" in cc:
+            config.chesscom.user_agent = cc["user_agent"]
+        if "request_delay" in cc:
+            config.chesscom.request_delay = float(cc["request_delay"])
+
     if "tablebase" in data:
         tb = data["tablebase"]
         if "syzygy_path" in tb:
@@ -238,6 +254,10 @@ def _apply_env(config: AppConfig) -> None:
         ),
         f"{ENV_PREFIX}GAME_SKIP_PLIES": lambda v: setattr(
             config.game_analysis, "skip_first_plies", int(v)
+        ),
+        f"{ENV_PREFIX}CHESSCOM_USER_AGENT": lambda v: setattr(config.chesscom, "user_agent", v),
+        f"{ENV_PREFIX}CHESSCOM_REQUEST_DELAY": lambda v: setattr(
+            config.chesscom, "request_delay", float(v)
         ),
         f"{ENV_PREFIX}TABLEBASE_SYZYGY_PATH": lambda v: setattr(config.tablebase, "syzygy_path", v),
         f"{ENV_PREFIX}TABLEBASE_USE_LICHESS": lambda v: setattr(
@@ -293,6 +313,10 @@ path = "~/.chess-trainer/trainer.db"
 [lichess]
 api_url = "https://lichess.org/api"
 # token = "lip_..."  # Your Lichess API token
+
+[chesscom]
+user_agent = "ChessTrainer/1.0 (github.com/user/chess_trainer)"
+request_delay = 0.5  # Seconds between archive page fetches
 
 [scheduler]
 request_retention = 0.9

@@ -71,7 +71,7 @@ class TestImportGamesCommand:
     def test_no_args(self):
         result = runner.invoke(app, ["import-games"])
         assert result.exit_code != 0
-        assert "Specify either --pgn or --user" in result.output
+        assert "Specify --pgn, --user (Lichess), or --chesscom-user" in result.output
 
     def test_invalid_severity(self, tmp_path):
         pgn_file = tmp_path / "test.pgn"
@@ -228,7 +228,7 @@ class TestAnalyzeGameCommand:
     def test_no_args(self):
         result = runner.invoke(app, ["analyze-game"])
         assert result.exit_code != 0
-        assert "Specify either --pgn or --game-id" in result.output
+        assert "Specify --pgn, --game-id (Lichess), or --chesscom-game" in result.output
 
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
     def test_analyze_pgn(self, mock_popen, tmp_path):
