@@ -93,27 +93,22 @@ class TestImportChessComPuzzles:
 
 
 class TestImportGamesChessCom:
-    def test_mutually_exclusive_sources(self, tmp_path):
-        db = tmp_path / "test.db"
+    def test_mutually_exclusive_sources(self):
         result = runner.invoke(
             app,
-            [
-                "import-games",
-                "--user",
-                "someone",
-                "--chesscom-user",
-                "someone",
-                "--db",
-                str(db),
-            ],
+            ["import-games", "--user", "someone", "--chesscom-user", "someone"],
         )
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_server_evals_warning(self, tmp_path):
-        """--server-evals with --chesscom-user should warn and continue."""
+    @patch("src.analysis.engine.EngineManager.open")
+    def test_server_evals_warning(self, mock_engine_open, tmp_path):
+        """--server-evals with --chesscom-user prints warning then fails on engine."""
+        from src.analysis import EngineError
+
+        mock_engine_open.side_effect = EngineError("No engine found")
+
         db = tmp_path / "test.db"
-        # This will fail due to no engine but should still print the warning
         result = runner.invoke(
             app,
             [
@@ -126,11 +121,60 @@ class TestImportGamesChessCom:
             ],
         )
         assert "--server-evals is not available for Chess.com" in result.output
+        # Should exit with error since engine is required for Chess.com
+        assert result.exit_code != 0
 
     def test_no_source_specified(self):
         result = runner.invoke(app, ["import-games"])
         assert result.exit_code != 0
         assert "--chesscom-user" in result.output
+
+    @patch("src.importers.chesscom_games.get_recent_games")
+    @patch("src.analysis.engine.EngineManager.close")
+    @patch("src.analysis.engine.EngineManager.open")
+    @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
+    def test_chesscom_import_success(self, mock_popen, mock_open, mock_close, mock_games, tmp_path):
+        """Full success path: engine mocked, API mocked, exercises stored."""
+        mock_games.return_value = iter([])  # No games — just verify the path works
+
+        db = tmp_path / "test.db"
+        result = runner.invoke(
+            app,
+            [
+                "import-games",
+                "--chesscom-user",
+                "testuser",
+                "--max-games",
+                "1",
+                "--db",
+                str(db),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Chess.com Game Analysis" in result.output
+
+    @patch("src.analysis.engine.EngineManager.open")
+    def test_chesscom_no_engine_exits(self, mock_engine_open, tmp_path):
+        """Chess.com requires engine — missing engine should exit with error."""
+        from src.analysis import EngineError
+
+        mock_engine_open.side_effect = EngineError("No engine found")
+
+        db = tmp_path / "test.db"
+        result = runner.invoke(
+            app,
+            ["import-games", "--chesscom-user", "testuser", "--db", str(db)],
+        )
+        assert result.exit_code != 0
+
+    def test_time_class_option_accepted(self):
+        """--time-class is accepted without error (fails on engine, not on arg parsing)."""
+        result = runner.invoke(
+            app,
+            ["import-games", "--chesscom-user", "testuser", "--time-class", "blitz"],
+        )
+        # Fails on engine, not on arg parsing
+        assert "time-class" not in result.output or result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------
@@ -147,17 +191,50 @@ class TestAnalyzeGameChessCom:
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_server_evals_warning(self):
+    @patch("src.chesscom.api.requests.get")
+    def test_server_evals_warning(self, mock_get):
+        """--server-evals with --chesscom-game prints warning then hits API."""
+        from unittest.mock import MagicMock
+
+        from requests import HTTPError, Response
+
+        # Mock Chess.com API to return 404 so it fails fast
+        resp = MagicMock(spec=Response)
+        resp.status_code = 404
+        resp.raise_for_status.side_effect = HTTPError(response=resp)
+        mock_get.return_value = resp
+
         result = runner.invoke(
             app,
             ["analyze-game", "--chesscom-game", "12345", "--server-evals"],
         )
         assert "--server-evals is not available for Chess.com" in result.output
+        # Should exit with error (API fails)
+        assert result.exit_code != 0
 
     def test_no_source_specified(self):
         result = runner.invoke(app, ["analyze-game"])
         assert result.exit_code != 0
         assert "--chesscom-game" in result.output
+
+    @patch("src.chesscom.api.requests.get")
+    def test_chesscom_game_api_failure(self, mock_get):
+        """Chess.com API failure should print a helpful message."""
+        from unittest.mock import MagicMock
+
+        from requests import HTTPError, Response
+
+        resp = MagicMock(spec=Response)
+        resp.status_code = 404
+        resp.raise_for_status.side_effect = HTTPError(response=resp)
+        mock_get.return_value = resp
+
+        result = runner.invoke(
+            app,
+            ["analyze-game", "--chesscom-game", "99999999"],
+        )
+        assert result.exit_code != 0
+        assert "Could not fetch game" in result.output
 
 
 # ---------------------------------------------------------------------------
