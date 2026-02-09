@@ -114,6 +114,28 @@ analyze fen="" depth=default_depth multipv=default_multipv *args:
 analyze-interactive fen="" *args:
     uv run {{ project_name }} analyze {{ if fen != "" { '"' + fen + '"' } else { "" } }} --interactive {{ args }}
 
+[group: 'analyze']
+[doc('Analyze a game from PGN file')]
+analyze-game pgn *args:
+    uv run {{ project_name }} analyze-game --pgn "{{ pgn }}" {{ args }}
+
+# ─── games ───────────────────────────────────────────────────────────────
+
+[group: 'games']
+[doc('Import games from a PGN file and generate exercises')]
+import-games-pgn pgn *args:
+    uv run {{ project_name }} import-games --pgn "{{ pgn }}" {{ args }}
+
+[group: 'games']
+[doc('Import games from Lichess (with server evals, no engine needed)')]
+import-games-lichess username *args:
+    uv run {{ project_name }} import-games --user {{ username }} --server-evals {{ args }}
+
+[group: 'games']
+[doc('Import games from Lichess with local engine analysis')]
+import-games-engine username *args:
+    uv run {{ project_name }} import-games --user {{ username }} {{ args }}
+
 # ─── explore ─────────────────────────────────────────────────────────────────
 
 [group: 'explore']

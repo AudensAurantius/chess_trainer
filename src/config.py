@@ -84,6 +84,16 @@ class OpeningsConfig:
 
 
 @dataclass
+class GameAnalysisConfig:
+    """Own-game analysis and exercise generation settings."""
+
+    analysis_depth: int = 20
+    min_classification: str = "MISTAKE"  # INACCURACY, MISTAKE, or BLUNDER
+    max_exercises_per_game: int = 10
+    skip_first_plies: int = 6  # Skip opening theory moves
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -95,6 +105,7 @@ class AppConfig:
     web: WebConfig = field(default_factory=WebConfig)
     engine: EngineConfig = field(default_factory=EngineConfig)
     openings: OpeningsConfig = field(default_factory=OpeningsConfig)
+    game_analysis: GameAnalysisConfig = field(default_factory=GameAnalysisConfig)
 
 
 def _apply_toml(config: AppConfig, data: dict) -> None:
@@ -165,6 +176,17 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "min_games" in op:
             config.openings.min_games = int(op["min_games"])
 
+    if "game_analysis" in data:
+        ga = data["game_analysis"]
+        if "analysis_depth" in ga:
+            config.game_analysis.analysis_depth = int(ga["analysis_depth"])
+        if "min_classification" in ga:
+            config.game_analysis.min_classification = ga["min_classification"].upper()
+        if "max_exercises_per_game" in ga:
+            config.game_analysis.max_exercises_per_game = int(ga["max_exercises_per_game"])
+        if "skip_first_plies" in ga:
+            config.game_analysis.skip_first_plies = int(ga["skip_first_plies"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -186,6 +208,18 @@ def _apply_env(config: AppConfig) -> None:
             config.openings, "cache_ttl_hours", int(v)
         ),
         f"{ENV_PREFIX}OPENINGS_MIN_GAMES": lambda v: setattr(config.openings, "min_games", int(v)),
+        f"{ENV_PREFIX}GAME_ANALYSIS_DEPTH": lambda v: setattr(
+            config.game_analysis, "analysis_depth", int(v)
+        ),
+        f"{ENV_PREFIX}GAME_MIN_CLASSIFICATION": lambda v: setattr(
+            config.game_analysis, "min_classification", v.upper()
+        ),
+        f"{ENV_PREFIX}GAME_MAX_EXERCISES": lambda v: setattr(
+            config.game_analysis, "max_exercises_per_game", int(v)
+        ),
+        f"{ENV_PREFIX}GAME_SKIP_PLIES": lambda v: setattr(
+            config.game_analysis, "skip_first_plies", int(v)
+        ),
     }
     for key, setter in env_map.items():
         val = os.environ.get(key)
@@ -263,4 +297,10 @@ default_multipv = 3
 explorer_source = "lichess"  # lichess, masters, or player
 cache_ttl_hours = 168        # 1 week
 min_games = 5                # Minimum games to show a move
+
+[game_analysis]
+analysis_depth = 20          # Engine depth for game analysis
+min_classification = "MISTAKE"  # INACCURACY, MISTAKE, or BLUNDER
+max_exercises_per_game = 10  # Max exercises generated per game
+skip_first_plies = 6         # Skip opening theory moves
 """

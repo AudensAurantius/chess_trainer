@@ -1,7 +1,7 @@
 """Main CLI application using Typer."""
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import chess
@@ -504,7 +504,11 @@ def config_show() -> None:
             f"[bold]engine.default_multipv[/bold] = {cfg.engine.default_multipv}\n"
             f"[bold]openings.explorer_source[/bold] = {cfg.openings.explorer_source}\n"
             f"[bold]openings.cache_ttl_hours[/bold] = {cfg.openings.cache_ttl_hours}\n"
-            f"[bold]openings.min_games[/bold] = {cfg.openings.min_games}",
+            f"[bold]openings.min_games[/bold] = {cfg.openings.min_games}\n"
+            f"[bold]game_analysis.analysis_depth[/bold] = {cfg.game_analysis.analysis_depth}\n"
+            f"[bold]game_analysis.min_classification[/bold] = {cfg.game_analysis.min_classification}\n"
+            f"[bold]game_analysis.max_exercises_per_game[/bold] = {cfg.game_analysis.max_exercises_per_game}\n"
+            f"[bold]game_analysis.skip_first_plies[/bold] = {cfg.game_analysis.skip_first_plies}",
             title="Effective Configuration",
         )
     )
@@ -1039,6 +1043,301 @@ def book_train(
     """Start a training session with opening exercises."""
     # Delegate to the main train command with --type OPENING
     train(exercise_type="OPENING", db=db)
+
+
+@app.command("import-games")
+def import_games(
+    pgn: Path | None = typer.Option(None, "--pgn", help="Path to PGN file"),
+    user: str | None = typer.Option(None, "--user", "-u", help="Lichess username"),
+    max_games: int = typer.Option(10, "--max-games", "-n", help="Max games to import"),
+    server_evals: bool = typer.Option(
+        False, "--server-evals", help="Use Lichess server evaluations (no engine needed)"
+    ),
+    color: str | None = typer.Option(None, "--color", help="Only exercises for white or black"),
+    min_severity: str = typer.Option(
+        None, "--min-severity", help="Minimum severity: INACCURACY, MISTAKE, or BLUNDER"
+    ),
+    max_exercises: int | None = typer.Option(
+        None, "--max-exercises", help="Max exercises per game"
+    ),
+    depth: int | None = typer.Option(None, "--depth", "-d", help="Engine analysis depth"),
+    engine_path: str | None = typer.Option(
+        None, "--engine", "-e", help="Path to UCI engine binary"
+    ),
+    since: str | None = typer.Option(None, "--since", help="Only games since (YYYY-MM-DD)"),
+    until: str | None = typer.Option(None, "--until", help="Only games until (YYYY-MM-DD)"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import own games and generate exercises from mistakes."""
+    from ..analysis import EngineError, EngineManager, MoveClassification
+    from ..importers.games import GameImporter
+
+    if not pgn and not user:
+        console.print("[red]Specify either --pgn or --user.[/red]")
+        raise typer.Exit(1)
+
+    cfg = _get_config()
+    ga = cfg.game_analysis
+
+    analysis_depth = depth or ga.analysis_depth
+    severity = min_severity or ga.min_classification
+    max_ex = max_exercises or ga.max_exercises_per_game
+
+    try:
+        min_class = MoveClassification[severity.upper()]
+    except KeyError:
+        console.print(
+            f"[red]Invalid severity: {severity}. Use INACCURACY, MISTAKE, or BLUNDER.[/red]"
+        )
+        raise typer.Exit(1)
+
+    # Parse date filters to Unix ms timestamps
+    since_ms = _parse_date_to_ms(since) if since else None
+    until_ms = _parse_date_to_ms(until) if until else None
+
+    # Determine if we need an engine
+    need_engine = not server_evals
+    engine_mgr = None
+
+    if need_engine and not pgn:
+        # For Lichess without server evals, we need an engine
+        need_engine = True
+
+    if need_engine:
+        engine_bin = engine_path or cfg.engine.path
+        try:
+            engine_mgr = EngineManager(
+                path=engine_bin,
+                hash_mb=cfg.engine.hash_mb,
+                threads=cfg.engine.threads,
+            )
+            engine_mgr.open()
+        except EngineError as e:
+            if server_evals:
+                console.print("[yellow]Engine not available, using server evals only.[/yellow]")
+                engine_mgr = None
+            else:
+                console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1)
+
+    try:
+        importer = GameImporter(
+            engine_mgr,
+            depth=analysis_depth,
+            min_classification=min_class,
+            max_exercises=max_ex,
+            skip_first_plies=ga.skip_first_plies,
+        )
+
+        with get_repo(db) as repo:
+            fetch_kwargs: dict = {}
+            if pgn:
+                fetch_kwargs["pgn_path"] = pgn
+            else:
+                fetch_kwargs["username"] = user
+                fetch_kwargs["use_server_evals"] = server_evals
+                fetch_kwargs["max_games"] = max_games
+                fetch_kwargs["since"] = since_ms
+                fetch_kwargs["until"] = until_ms
+
+            if color:
+                fetch_kwargs["color"] = color.lower()
+
+            with console.status("Analyzing games and generating exercises..."):
+                result = importer.import_to(repo.exercises, **fetch_kwargs)
+
+            console.print(f"\n[green]\u2713[/green] {result}")
+
+            # Create review cards for new exercises
+            if result.total_added > 0:
+                for exercise in repo.exercises.search(source="game_analysis"):
+                    existing = repo.cards.get(exercise.id)
+                    if not existing:
+                        repo.cards.get_or_create(exercise.id)
+
+            if result.errors:
+                console.print("[yellow]Errors:[/yellow]")
+                for error in result.errors[:5]:
+                    console.print(f"  - {error}")
+    finally:
+        if engine_mgr:
+            engine_mgr.close()
+
+
+@app.command("analyze-game")
+def analyze_game(
+    pgn: Path | None = typer.Option(None, "--pgn", help="Path to PGN file"),
+    game_id: str | None = typer.Option(None, "--game-id", help="Lichess game ID"),
+    server_evals: bool = typer.Option(
+        False, "--server-evals", help="Use Lichess server evaluations"
+    ),
+    depth: int | None = typer.Option(None, "--depth", "-d", help="Engine analysis depth"),
+    engine_path: str | None = typer.Option(
+        None, "--engine", "-e", help="Path to UCI engine binary"
+    ),
+    color: str | None = typer.Option(None, "--color", help="Show only white or black moves"),
+):
+    """Analyze a game and display a move-by-move quality report."""
+    from ..analysis import EngineError, EngineManager, MoveClassification
+    from ..analysis.mistakes import (
+        EnginePositionAnalyzer,
+        LichessServerAnalyzer,
+        MistakeDetector,
+    )
+    from ..importers.games import parse_pgn_games
+
+    if not pgn and not game_id:
+        console.print("[red]Specify either --pgn or --game-id.[/red]")
+        raise typer.Exit(1)
+
+    cfg = _get_config()
+    analysis_depth = depth or cfg.game_analysis.analysis_depth
+
+    import io
+
+    import chess.pgn
+
+    game = None
+    source_url = None
+    lichess_evals = None
+
+    if pgn:
+        games = parse_pgn_games(pgn)
+        if not games:
+            console.print("[red]No games found in PGN file.[/red]")
+            raise typer.Exit(1)
+        game = games[0]
+    elif game_id:
+        from ..lichess.api import get_game
+
+        game_data = get_game(game_id)
+        pgn_text = game_data.get("pgn", "")
+        if not pgn_text:
+            console.print("[red]No PGN data in game response.[/red]")
+            raise typer.Exit(1)
+
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+        source_url = f"https://lichess.org/{game_id}"
+
+        if server_evals and "analysis" in game_data:
+            lichess_evals = game_data.get("analysis", [])
+
+    if game is None:
+        console.print("[red]Could not parse game.[/red]")
+        raise typer.Exit(1)
+
+    engine_mgr = None
+    try:
+        if lichess_evals is not None or server_evals:
+            if lichess_evals:
+                evals = [{"cp": 0}]
+                for entry in lichess_evals:
+                    if entry and "eval" in entry:
+                        evals.append(entry["eval"])
+                    elif entry:
+                        evals.append(entry)
+                    else:
+                        evals.append(None)
+                analyzer = LichessServerAnalyzer(evals)
+            else:
+                console.print("[yellow]No server evals available, falling back to engine.[/yellow]")
+                server_evals = False
+
+        if not server_evals and lichess_evals is None:
+            engine_bin = engine_path or cfg.engine.path
+            try:
+                engine_mgr = EngineManager(
+                    path=engine_bin,
+                    hash_mb=cfg.engine.hash_mb,
+                    threads=cfg.engine.threads,
+                )
+                engine_mgr.open()
+                analyzer = EnginePositionAnalyzer(engine_mgr, depth=analysis_depth)
+            except EngineError as e:
+                console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1)
+
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.BEST,
+            skip_first_plies=0,
+        )
+
+        with console.status("Analyzing game..."):
+            analysis = detector.analyze_game(game, game_id=game_id, source_url=source_url)
+
+        # Display results
+        console.print(
+            f"\n[bold]{analysis.white}[/bold] vs [bold]{analysis.black}[/bold] — {analysis.result}"
+        )
+        if analysis.source_url:
+            console.print(f"[dim]{analysis.source_url}[/dim]")
+
+        # Move table
+        table = Table(title="Move-by-Move Analysis")
+        table.add_column("#", style="dim", width=4)
+        table.add_column("Move", width=8)
+        table.add_column("Quality", width=12)
+        table.add_column("CP Loss", justify="right", width=8)
+        table.add_column("Eval", justify="right", width=8)
+
+        for am in analysis.moves:
+            if color and am.color != color.lower():
+                continue
+
+            # Color-code the quality
+            cls = am.classification
+            if cls == MoveClassification.BLUNDER:
+                style = "red bold"
+            elif cls == MoveClassification.MISTAKE:
+                style = "red"
+            elif cls == MoveClassification.INACCURACY:
+                style = "yellow"
+            elif cls in (MoveClassification.BEST, MoveClassification.EXCELLENT):
+                style = "green"
+            else:
+                style = ""
+
+            board_at = chess.Board(am.fen_before)
+            san = board_at.san(am.move)
+            move_label = f"{am.move_number}{'.' if am.color == 'white' else '...'}{san}"
+
+            eval_cp = am.eval_before.score_cp / 100
+            eval_str = f"{eval_cp:+.1f}"
+
+            table.add_row(
+                str(am.ply),
+                move_label,
+                f"[{style}]{cls.name}[/{style}]",
+                str(am.cp_loss) if am.cp_loss > 0 else "",
+                eval_str,
+            )
+
+        console.print(table)
+
+        # Summary
+        mistakes = analysis.filter_by_classification(MoveClassification.MISTAKE)
+        blunders = analysis.filter_by_classification(MoveClassification.BLUNDER)
+        inaccuracies = analysis.filter_by_classification(MoveClassification.INACCURACY)
+
+        console.print(
+            f"\n[bold]Summary:[/bold] "
+            f"[yellow]{len(inaccuracies)} inaccuracies[/yellow], "
+            f"[red]{len(mistakes)} mistakes[/red], "
+            f"[red bold]{len(blunders)} blunders[/red bold]"
+        )
+    finally:
+        if engine_mgr:
+            engine_mgr.close()
+
+
+def _parse_date_to_ms(date_str: str) -> int:
+    """Parse a YYYY-MM-DD date string to Unix milliseconds."""
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
+        return int(dt.timestamp() * 1000)
+    except ValueError:
+        return 0
 
 
 @app.command()

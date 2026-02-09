@@ -238,6 +238,58 @@ def get_puzzle_history(limit: int = 100) -> Iterator[JsonObject]:
     )
 
 
+def get_user_games(
+    username: str,
+    *,
+    max: int = 10,
+    evals: bool = False,
+    opening: bool = True,
+    pgn_in_json: bool = True,
+    since: int | None = None,
+    until: int | None = None,
+    rated: bool | None = None,
+    perf_type: str | None = None,
+) -> Iterator[JsonObject]:
+    """Fetch games for a Lichess user.
+
+    Args:
+        username: Lichess username.
+        max: Maximum number of games to retrieve.
+        evals: Include per-ply engine evaluations.
+        opening: Include opening information.
+        pgn_in_json: Include PGN in the JSON response.
+        since: Only games played since this Unix timestamp (ms).
+        until: Only games played until this Unix timestamp (ms).
+        rated: Filter for rated/unrated games.
+        perf_type: Filter by speed (blitz, rapid, classical, etc.).
+
+    Yields:
+        Game data JSON objects.
+    """
+    logger.info("Getting games for user %s (max=%d, evals=%s)", username, max, evals)
+    params: dict[str, str] = {
+        "max": str(max),
+        "evals": str(evals).lower(),
+        "opening": str(opening).lower(),
+        "pgnInJson": str(pgn_in_json).lower(),
+    }
+    if since is not None:
+        params["since"] = str(since)
+    if until is not None:
+        params["until"] = str(until)
+    if rated is not None:
+        params["rated"] = str(rated).lower()
+    if perf_type is not None:
+        params["perfType"] = perf_type
+
+    yield from get_lichess(
+        f"games/user/{username}",
+        query_params=params,
+        accept="application/x-ndjson",
+        stream=True,
+    )
+
+
 def write_puzzle_history(filename: str | Path, limit: int = 100) -> None:
     """Download puzzle history to a file with a progress bar.
 
