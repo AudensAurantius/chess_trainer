@@ -6,6 +6,7 @@ import pytest
 
 from src.config import (
     AppConfig,
+    ExperimentalConfig,
     _apply_env,
     _apply_toml,
     _check_permissions,
@@ -16,6 +17,7 @@ from src.config import (
     generate_default_config,
     get_config_keys,
     get_config_value,
+    is_experimental_enabled,
     load_config,
     reset_config_value,
     set_config_value,
@@ -506,3 +508,215 @@ class TestFilePermissions:
         reset_config_value("web.port", config_path=path)
         mode = path.stat().st_mode & 0o777
         assert mode == 0o600
+
+
+class TestExperimentalConfigDefaults:
+    """Tests for ExperimentalConfig dataclass defaults."""
+
+    def test_defaults(self):
+        cfg = ExperimentalConfig()
+        assert cfg.enabled is False
+        assert cfg.vision is False
+        assert cfg.vision_backend == "claude"
+        assert cfg.claude_api_key is None
+        assert cfg.openai_api_key is None
+        assert cfg.local_model_path is None
+
+    def test_app_config_has_experimental(self):
+        cfg = AppConfig()
+        assert hasattr(cfg, "experimental")
+        assert isinstance(cfg.experimental, ExperimentalConfig)
+        assert cfg.experimental.enabled is False
+
+
+class TestExperimentalApplyToml:
+    """Tests for TOML overlay of [experimental] section."""
+
+    def test_apply_experimental_all_fields(self):
+        cfg = AppConfig()
+        data = {
+            "experimental": {
+                "enabled": True,
+                "vision": True,
+                "vision_backend": "openai",
+                "claude_api_key": "sk-ant-test",
+                "openai_api_key": "sk-test",
+                "local_model_path": "/path/to/model",
+            }
+        }
+        _apply_toml(cfg, data)
+        assert cfg.experimental.enabled is True
+        assert cfg.experimental.vision is True
+        assert cfg.experimental.vision_backend == "openai"
+        assert cfg.experimental.claude_api_key == "sk-ant-test"
+        assert cfg.experimental.openai_api_key == "sk-test"
+        assert cfg.experimental.local_model_path == "/path/to/model"
+
+    def test_apply_experimental_partial(self):
+        cfg = AppConfig()
+        _apply_toml(cfg, {"experimental": {"enabled": True}})
+        assert cfg.experimental.enabled is True
+        assert cfg.experimental.vision is False  # Unchanged
+
+    def test_apply_experimental_preserves_other_sections(self):
+        cfg = AppConfig()
+        _apply_toml(cfg, {
+            "web": {"port": 9000},
+            "experimental": {"enabled": True},
+        })
+        assert cfg.web.port == 9000
+        assert cfg.experimental.enabled is True
+
+
+class TestExperimentalApplyEnv:
+    """Tests for experimental env variable overrides."""
+
+    def test_env_experimental_enabled(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_EXPERIMENTAL_ENABLED", "true")
+        _apply_env(cfg)
+        assert cfg.experimental.enabled is True
+
+    def test_env_experimental_vision(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_EXPERIMENTAL_VISION", "1")
+        _apply_env(cfg)
+        assert cfg.experimental.vision is True
+
+    def test_env_experimental_vision_backend(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_EXPERIMENTAL_VISION_BACKEND", "openai")
+        _apply_env(cfg)
+        assert cfg.experimental.vision_backend == "openai"
+
+    def test_env_claude_api_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_CLAUDE_API_KEY", "sk-ant-xxx")
+        _apply_env(cfg)
+        assert cfg.experimental.claude_api_key == "sk-ant-xxx"
+
+    def test_env_anthropic_api_key_fallback(self, monkeypatch):
+        monkeypatch.delenv("CHESS_TRAINER_CLAUDE_API_KEY", raising=False)
+        cfg = AppConfig()
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-fallback")
+        _apply_env(cfg)
+        assert cfg.experimental.claude_api_key == "sk-ant-fallback"
+
+    def test_env_openai_api_key(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_OPENAI_API_KEY", "sk-xxx")
+        _apply_env(cfg)
+        assert cfg.experimental.openai_api_key == "sk-xxx"
+
+    def test_env_openai_api_key_fallback(self, monkeypatch):
+        monkeypatch.delenv("CHESS_TRAINER_OPENAI_API_KEY", raising=False)
+        cfg = AppConfig()
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-fallback")
+        _apply_env(cfg)
+        assert cfg.experimental.openai_api_key == "sk-fallback"
+
+
+class TestIsExperimentalEnabled:
+    """Tests for the is_experimental_enabled helper."""
+
+    def test_both_false(self):
+        cfg = AppConfig()
+        assert is_experimental_enabled(cfg, "vision") is False
+
+    def test_master_only(self):
+        cfg = AppConfig()
+        cfg.experimental.enabled = True
+        assert is_experimental_enabled(cfg, "vision") is False
+
+    def test_feature_only(self):
+        cfg = AppConfig()
+        cfg.experimental.vision = True
+        assert is_experimental_enabled(cfg, "vision") is False
+
+    def test_both_true(self):
+        cfg = AppConfig()
+        cfg.experimental.enabled = True
+        cfg.experimental.vision = True
+        assert is_experimental_enabled(cfg, "vision") is True
+
+    def test_unknown_feature(self):
+        cfg = AppConfig()
+        cfg.experimental.enabled = True
+        assert is_experimental_enabled(cfg, "nonexistent") is False
+
+
+class TestExperimentalValidation:
+    """Tests for experimental config validation rules."""
+
+    def test_valid_backend_claude(self):
+        _validate_value("experimental.vision_backend", "claude")
+
+    def test_valid_backend_openai(self):
+        _validate_value("experimental.vision_backend", "openai")
+
+    def test_valid_backend_local(self):
+        _validate_value("experimental.vision_backend", "local")
+
+    def test_invalid_backend(self):
+        with pytest.raises(ValueError, match="must be one of"):
+            _validate_value("experimental.vision_backend", "gemini")
+
+
+class TestExperimentalSetConfigValue:
+    """Tests for set/reset of experimental config keys."""
+
+    def test_set_experimental_enabled(self, tmp_path):
+        path = tmp_path / "config.toml"
+        result = set_config_value("experimental.enabled", "true", config_path=path)
+        assert result is True
+
+    def test_set_vision_backend(self, tmp_path):
+        path = tmp_path / "config.toml"
+        result = set_config_value("experimental.vision_backend", "openai", config_path=path)
+        assert result == "openai"
+
+    def test_set_vision_backend_case_normalized(self, tmp_path):
+        path = tmp_path / "config.toml"
+        result = set_config_value("experimental.vision_backend", "CLAUDE", config_path=path)
+        assert result == "claude"
+
+    def test_set_vision_backend_invalid(self, tmp_path):
+        path = tmp_path / "config.toml"
+        with pytest.raises(ValueError, match="must be one of"):
+            set_config_value("experimental.vision_backend", "gemini", config_path=path)
+
+    def test_get_experimental_keys(self):
+        keys = get_config_keys()
+        assert "experimental.enabled" in keys
+        assert "experimental.vision" in keys
+        assert "experimental.vision_backend" in keys
+        assert "experimental.claude_api_key" in keys
+        assert "experimental.openai_api_key" in keys
+        assert "experimental.local_model_path" in keys
+        assert keys["experimental.enabled"] is bool
+        assert keys["experimental.vision_backend"] is str
+
+    def test_get_config_value_experimental(self):
+        cfg = AppConfig()
+        cfg.experimental.enabled = True
+        assert get_config_value(cfg, "experimental.enabled") is True
+        assert get_config_value(cfg, "experimental.vision_backend") == "claude"
+
+    def test_reset_experimental_key(self, tmp_path):
+        path = tmp_path / "config.toml"
+        set_config_value("experimental.enabled", "true", config_path=path)
+        reset_config_value("experimental.enabled", config_path=path)
+        data = tomllib.loads(path.read_text())
+        assert "enabled" not in data.get("experimental", {})
+
+
+class TestExperimentalDefaultConfig:
+    """Tests for experimental section in generated default config."""
+
+    def test_default_config_has_experimental_commented(self):
+        content = generate_default_config()
+        assert "# [experimental]" in content
+        assert "# enabled = false" in content
+        assert '# vision_backend = "claude"' in content

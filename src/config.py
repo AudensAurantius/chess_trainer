@@ -117,6 +117,18 @@ class ChessComConfig:
 
 
 @dataclass
+class ExperimentalConfig:
+    """Experimental feature flags."""
+
+    enabled: bool = False  # Master kill-switch
+    vision: bool = False  # Vision-based position import
+    vision_backend: str = "claude"  # claude | openai | local
+    claude_api_key: str | None = None
+    openai_api_key: str | None = None
+    local_model_path: str | None = None
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -131,6 +143,7 @@ class AppConfig:
     openings: OpeningsConfig = field(default_factory=OpeningsConfig)
     game_analysis: GameAnalysisConfig = field(default_factory=GameAnalysisConfig)
     tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
+    experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
 
 
 # TODO: Consider simplifying using dataclasses-json or similar
@@ -230,6 +243,21 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "max_pieces" in tb:
             config.tablebase.max_pieces = int(tb["max_pieces"])
 
+    if "experimental" in data:
+        exp = data["experimental"]
+        if "enabled" in exp:
+            config.experimental.enabled = bool(exp["enabled"])
+        if "vision" in exp:
+            config.experimental.vision = bool(exp["vision"])
+        if "vision_backend" in exp:
+            config.experimental.vision_backend = exp["vision_backend"]
+        if "claude_api_key" in exp:
+            config.experimental.claude_api_key = exp["claude_api_key"]
+        if "openai_api_key" in exp:
+            config.experimental.openai_api_key = exp["openai_api_key"]
+        if "local_model_path" in exp:
+            config.experimental.local_model_path = exp["local_model_path"]
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -274,6 +302,23 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}TABLEBASE_MAX_PIECES": lambda v: setattr(
             config.tablebase, "max_pieces", int(v)
         ),
+        f"{ENV_PREFIX}EXPERIMENTAL_ENABLED": lambda v: setattr(
+            config.experimental, "enabled", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}EXPERIMENTAL_VISION": lambda v: setattr(
+            config.experimental, "vision", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}EXPERIMENTAL_VISION_BACKEND": lambda v: setattr(
+            config.experimental, "vision_backend", v
+        ),
+        f"{ENV_PREFIX}CLAUDE_API_KEY": lambda v: setattr(
+            config.experimental, "claude_api_key", v
+        ),
+        "ANTHROPIC_API_KEY": lambda v: setattr(config.experimental, "claude_api_key", v),
+        f"{ENV_PREFIX}OPENAI_API_KEY": lambda v: setattr(
+            config.experimental, "openai_api_key", v
+        ),
+        "OPENAI_API_KEY": lambda v: setattr(config.experimental, "openai_api_key", v),
     }
     for key, setter in env_map.items():
         val = os.environ.get(key)
@@ -391,6 +436,14 @@ skip_first_plies = 6         # Skip opening theory moves
 # syzygy_path = "/path/to/syzygy"  # Local Syzygy tablebase files
 use_lichess_fallback = true         # Fall back to Lichess API
 max_pieces = 7                      # Max pieces for tablebase probe
+
+# [experimental]
+# enabled = false                  # Master kill-switch for experimental features
+# vision = false                   # Vision-based position import from screenshots
+# vision_backend = "claude"        # claude | openai | local
+# claude_api_key = "sk-ant-..."    # Anthropic API key (or set ANTHROPIC_API_KEY)
+# openai_api_key = "sk-..."        # OpenAI API key (or set OPENAI_API_KEY)
+# local_model_path = "/path/to/model"  # Local ONNX model for vision
 """
 
 
@@ -516,6 +569,7 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "logging.level": ("enum", {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}),
     "game_analysis.min_classification": ("enum", {"INACCURACY", "MISTAKE", "BLUNDER"}),
     "openings.explorer_source": ("enum", {"lichess", "masters", "player"}),
+    "experimental.vision_backend": ("enum", {"claude", "openai", "local"}),
 }
 
 
@@ -589,6 +643,8 @@ def set_config_value(
     # Case normalization for enum-like fields
     if key in ("logging.level", "game_analysis.min_classification") and isinstance(value, str):
         value = value.upper()
+    if key == "experimental.vision_backend" and isinstance(value, str):
+        value = value.lower()
 
     _validate_value(key, value)
 
@@ -663,3 +719,21 @@ def reset_config_value(
         # All keys removed → write empty file so defaults take effect
         path.write_text("")
     _secure_file(path)
+
+
+def is_experimental_enabled(config: AppConfig, feature: str) -> bool:
+    """Check if an experimental feature is enabled.
+
+    Both the master ``experimental.enabled`` flag and the per-feature flag
+    must be ``True`` for the feature to be considered active.
+
+    Args:
+        config: Application configuration.
+        feature: Feature name (e.g. ``"vision"``).
+
+    Returns:
+        ``True`` only if both flags are enabled.
+    """
+    if not config.experimental.enabled:
+        return False
+    return bool(getattr(config.experimental, feature, False))
