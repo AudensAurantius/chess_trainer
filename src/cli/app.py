@@ -878,6 +878,540 @@ def tag_search(
         console.print(table)
 
 
+# ── Bundle subcommand group ──────────────────────────────────────────────────
+
+bundle_app = typer.Typer(help="Manage exercise bundles and Woodpecker training")
+app.add_typer(bundle_app, name="bundle")
+
+
+@bundle_app.command("create")
+def bundle_create(
+    slug: str = typer.Argument(help="Bundle slug (lowercase, hyphens, 2-64 chars)"),
+    name: str = typer.Option(None, "--name", "-n", help="Display name (defaults to slug)"),
+    description: str = typer.Option("", "--desc", "-d", help="Bundle description"),
+    woodpecker: bool = typer.Option(False, "--woodpecker", "-w", help="Enable Woodpecker mode"),
+    threshold: float = typer.Option(None, "--threshold", help="Pass threshold (0.0-1.0)"),
+    shuffle: bool = typer.Option(None, "--shuffle", help="Shuffle exercise order"),
+    time_limit: int | None = typer.Option(
+        None, "--time-limit", help="Per-exercise time limit in seconds"
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Create a new exercise bundle."""
+    from ..exercises.bundle import (
+        BundleConfig,
+        ExerciseBundle,
+        WoodpeckerCycle,
+        generate_bundle_id,
+        validate_slug,
+    )
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    cfg = _get_config()
+    pass_thresh = threshold if threshold is not None else cfg.bundles.default_pass_threshold
+    do_shuffle = shuffle if shuffle is not None else cfg.bundles.default_shuffle
+
+    # Default Woodpecker cycles if mode enabled
+    woodpecker_cycles = []
+    if woodpecker:
+        woodpecker_cycles = [
+            WoodpeckerCycle(cycle_number=1, rest_days=0, time_limit_seconds=None),
+            WoodpeckerCycle(cycle_number=2, rest_days=1, time_limit_seconds=None),
+            WoodpeckerCycle(cycle_number=3, rest_days=3, time_limit_seconds=60),
+            WoodpeckerCycle(cycle_number=4, rest_days=7, time_limit_seconds=30),
+        ]
+
+    bundle = ExerciseBundle(
+        id=generate_bundle_id(validated),
+        name=name or validated.replace("-", " ").title(),
+        description=description,
+        config=BundleConfig(
+            woodpecker_mode=woodpecker,
+            woodpecker_cycles=woodpecker_cycles,
+            pass_threshold=pass_thresh,
+            shuffle=do_shuffle,
+            time_limit_seconds=time_limit,
+        ),
+    )
+
+    with get_repo(db) as repo:
+        try:
+            repo.bundles.create(bundle)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+    console.print(f"[green]\u2713[/green] Created bundle: {bundle.name} ({bundle.id})")
+    if woodpecker:
+        console.print("[dim]Woodpecker mode enabled with 4 default cycles[/dim]")
+
+
+@bundle_app.command("list")
+def bundle_list(
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """List all exercise bundles."""
+    with get_repo(db) as repo:
+        bundles = repo.bundles.list_all()
+
+        if not bundles:
+            console.print("[yellow]No bundles found.[/yellow]")
+            console.print("Create one with: chess-trainer bundle create <slug>")
+            return
+
+        table = Table(title=f"Exercise Bundles ({len(bundles)})")
+        table.add_column("Slug", style="bold")
+        table.add_column("Name")
+        table.add_column("Exercises", justify="right")
+        table.add_column("Mode", style="dim")
+        table.add_column("Cycle", justify="right")
+
+        for b in bundles:
+            mode = "Woodpecker" if b.config.woodpecker_mode else "Standard"
+            progress = repo.bundles.get_progress(b.id)
+            cycle_str = str(progress.current_cycle) if progress else "-"
+            table.add_row(b.slug, b.name, str(b.exercise_count), mode, cycle_str)
+
+        console.print(table)
+
+
+@bundle_app.command("show")
+def bundle_show(
+    slug: str = typer.Argument(help="Bundle slug"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Show details of an exercise bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        bundle = repo.bundles.get(bundle_id)
+        if not bundle:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]{bundle.name}[/bold] ({bundle.id})")
+        if bundle.description:
+            console.print(f"  {bundle.description}")
+        console.print(f"  Exercises: {bundle.exercise_count}")
+        console.print(
+            f"  Mode: {'Woodpecker' if bundle.config.woodpecker_mode else 'Standard'}"
+        )
+        console.print(f"  Pass threshold: {bundle.config.pass_threshold:.0%}")
+        console.print(f"  Shuffle: {bundle.config.shuffle}")
+        if bundle.config.time_limit_seconds:
+            console.print(f"  Time limit: {bundle.config.time_limit_seconds}s")
+        if bundle.auto_tags:
+            console.print(f"  Auto-tags: {', '.join(bundle.auto_tags)}")
+
+        if bundle.config.woodpecker_cycles:
+            console.print("\n  [bold]Woodpecker Cycles:[/bold]")
+            for c in bundle.config.woodpecker_cycles:
+                limit = f"{c.time_limit_seconds}s" if c.time_limit_seconds else "unlimited"
+                console.print(f"    Cycle {c.cycle_number}: rest {c.rest_days}d, time {limit}")
+
+        # Show progress
+        progress = repo.bundles.get_progress(bundle_id)
+        if progress:
+            console.print(f"\n  [bold]Progress:[/bold] Cycle {progress.current_cycle}")
+            if progress.completed_cycles:
+                for cr in progress.completed_cycles:
+                    status = "[green]PASS[/green]" if cr.passed else "[red]FAIL[/red]"
+                    console.print(
+                        f"    Cycle {cr.cycle_number}: {cr.accuracy:.0%} {status}"
+                    )
+
+        # Show first few exercise IDs
+        if bundle.exercise_ids:
+            shown = bundle.exercise_ids[:10]
+            console.print(f"\n  [bold]Exercises ({bundle.exercise_count}):[/bold]")
+            for eid in shown:
+                console.print(f"    {eid}")
+            if bundle.exercise_count > 10:
+                console.print(f"    ... and {bundle.exercise_count - 10} more")
+
+
+@bundle_app.command("add")
+def bundle_add(
+    slug: str = typer.Argument(help="Bundle slug"),
+    exercise_ids: list[str] = typer.Argument(help="Exercise IDs to add"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Add exercises to a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        try:
+            count = repo.bundles.add_exercises(bundle_id, exercise_ids)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]\u2713[/green] Added {count} exercise(s) to {slug}")
+
+
+@bundle_app.command("remove")
+def bundle_remove(
+    slug: str = typer.Argument(help="Bundle slug"),
+    exercise_ids: list[str] = typer.Argument(help="Exercise IDs to remove"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Remove exercises from a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        try:
+            count = repo.bundles.remove_exercises(bundle_id, exercise_ids)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]\u2713[/green] Removed {count} exercise(s) from {slug}")
+
+
+@bundle_app.command("delete")
+def bundle_delete(
+    slug: str = typer.Argument(help="Bundle slug"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Delete an exercise bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if not force:
+        if not typer.confirm(f"Delete bundle '{slug}'?", default=False):
+            raise typer.Abort()
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        deleted = repo.bundles.delete(bundle_id)
+        if deleted:
+            console.print(f"[green]\u2713[/green] Deleted bundle: {slug}")
+        else:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+
+@bundle_app.command("import")
+def bundle_import(
+    slug: str = typer.Argument(help="Bundle slug"),
+    tag: list[str] = typer.Option(..., "--tag", help="Tag(s) to import exercises from"),
+    match_all: bool = typer.Option(False, "--all", help="Require all tags (AND logic)"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import exercises into a bundle by tag."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+    from ..storage.tag_store import EntityType
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        bundle = repo.bundles.get(bundle_id)
+        if not bundle:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+        exercise_ids = repo.tags.find_by_tags(EntityType.EXERCISE, tag, match_all=match_all)
+        if not exercise_ids:
+            console.print(f"[yellow]No exercises found with tag(s): {', '.join(tag)}[/yellow]")
+            return
+
+        try:
+            count = repo.bundles.add_exercises(bundle_id, exercise_ids)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+        console.print(
+            f"[green]\u2713[/green] Added {count} exercise(s) to {slug} "
+            f"(from {len(exercise_ids)} matching)"
+        )
+
+
+@bundle_app.command("train")
+def bundle_train(
+    slug: str = typer.Argument(help="Bundle slug"),
+    self_report: bool = typer.Option(
+        False, "--self-report", "-s", help="Self-report mode (no move input)"
+    ),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Train exercises from a bundle (Woodpecker mode if configured)."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+    from ..training.woodpecker import WoodpeckerSession
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        bundle = repo.bundles.get(bundle_id)
+        if not bundle:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+        if not bundle.exercise_ids:
+            console.print(f"[yellow]Bundle '{slug}' has no exercises.[/yellow]")
+            return
+
+        progress = repo.bundles.get_progress(bundle_id)
+        session = WoodpeckerSession(repo, bundle, progress)
+        session.start()
+
+        total = session.remaining
+        cycle = session.progress.current_cycle
+        limit_str = f" ({session.time_limit}s per exercise)" if session.time_limit else ""
+
+        console.print(
+            f"\n[bold]{bundle.name}[/bold] \u2014 Cycle {cycle}, "
+            f"{total} exercises{limit_str}"
+        )
+        if not self_report:
+            console.print(
+                "[dim]Type moves in SAN (Nf3) or UCI (g1f3)."
+                " 'h' for hint, Enter to give up, 'q' to quit.[/dim]"
+            )
+        console.print()
+
+        while True:
+            exercise = session.next()
+            if not exercise:
+                break
+
+            board = exercise.position
+            num = session.stats.exercises_shown if session.stats else 0
+            progress_str = f"Exercise {num}/{total}"
+
+            flipped = board.turn == chess.BLACK
+            console.print(
+                Panel.fit(
+                    render_board(board, flipped=flipped),
+                    title=progress_str,
+                    subtitle=(
+                        f"[dim]{exercise.exercise_type.name}"
+                        f" | Cycle {cycle}[/dim]"
+                    ),
+                )
+            )
+            console.print(f"[bold]{exercise.get_challenge()}[/bold]")
+
+            if self_report:
+                console.print("\n[dim]Think about your answer, then press Enter to reveal.[/dim]")
+                input()
+                console.print(f"\n[bold]Solution:[/bold] {exercise.get_explanation()}")
+
+                while True:
+                    rating_input = typer.prompt(
+                        "\nHow did you do? [1=Again, 2=Hard, 3=Good, 4=Easy]",
+                        type=int,
+                        default=3,
+                    )
+                    if 1 <= rating_input <= 4:
+                        break
+                    console.print("[red]Please enter 1-4.[/red]")
+
+                rating = Rating(rating_input)
+                # Simulate result for progress tracking
+                is_correct = rating >= Rating.GOOD
+                if is_correct:
+                    session.progress.exercises_correct += 1
+                session.progress.exercises_attempted += 1
+                if session.stats:
+                    session.stats.exercises_shown += 0  # Already counted in next()
+                    if is_correct:
+                        session.stats.correct += 1
+                    else:
+                        session.stats.incorrect += 1
+            else:
+                moves, time_ms = _collect_moves(exercise)
+
+                if moves:
+                    result, over_time = session.submit(moves, time_ms)
+                    rating = session.auto_rate_woodpecker(result, over_time)
+
+                    if over_time:
+                        console.print(
+                            f"\n[yellow]Over time![/yellow] "
+                            f"({time_ms / 1000:.1f}s > {session.time_limit}s limit)"
+                        )
+                    elif result.correct:
+                        console.print(f"\n[green bold]Correct![/green bold] {result.feedback}")
+                    elif result.partial_credit > 0:
+                        console.print(f"\n[yellow]Partially correct.[/yellow] {result.feedback}")
+                    else:
+                        console.print(f"\n[red]Incorrect.[/red] {result.feedback}")
+                else:
+                    result, over_time = session.submit([], 0)
+                    rating = Rating.AGAIN
+
+                # Show solution
+                solution_line = format_solution_line(board, exercise.get_solution())
+                console.print(f"\n[bold]Solution:[/bold] {solution_line}")
+
+                # Let user override
+                console.print(
+                    f"[dim]Auto-rated: {rating.name} "
+                    f"(press Enter to accept, or type 1-4 to override)[/dim]"
+                )
+                override = input().strip()
+                if override in ("1", "2", "3", "4"):
+                    rating = Rating(int(override))
+
+            session.rate(rating)
+            console.print()
+
+        # End cycle
+        cycle_result = session.end_cycle()
+
+        status = "[green]PASSED[/green]" if cycle_result.passed else "[red]FAILED[/red]"
+        console.print("\n" + "=" * 40)
+        console.print(
+            Panel(
+                f"Cycle {cycle_result.cycle_number}: {status}\n"
+                f"Accuracy: {cycle_result.accuracy:.1%} "
+                f"(threshold: {bundle.config.pass_threshold:.0%})\n"
+                f"Exercises: {cycle_result.exercises_correct}/{cycle_result.exercises_attempted}",
+                title=f"Cycle Complete \u2014 {bundle.name}",
+            )
+        )
+        if cycle_result.passed:
+            console.print("[green]Advancing to next cycle![/green]")
+        else:
+            console.print("[yellow]Repeat this cycle to improve.[/yellow]")
+
+
+@bundle_app.command("progress")
+def bundle_progress(
+    slug: str = typer.Argument(help="Bundle slug"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Show training progress for a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        bundle = repo.bundles.get(bundle_id)
+        if not bundle:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+        progress = repo.bundles.get_progress(bundle_id)
+        if not progress:
+            console.print(f"[yellow]No training progress for '{slug}'.[/yellow]")
+            console.print(f"Start training: chess-trainer bundle train {slug}")
+            return
+
+        console.print(f"[bold]{bundle.name}[/bold] \u2014 Progress")
+        console.print(f"  Current cycle: {progress.current_cycle}")
+
+        if progress.completed_cycles:
+            table = Table(title="Completed Cycles")
+            table.add_column("Cycle", justify="right")
+            table.add_column("Accuracy", justify="right")
+            table.add_column("Result")
+            table.add_column("Exercises", justify="right")
+            table.add_column("Time Limit")
+            table.add_column("Completed")
+
+            for cr in progress.completed_cycles:
+                status = "[green]PASS[/green]" if cr.passed else "[red]FAIL[/red]"
+                limit = f"{cr.time_limit_seconds}s" if cr.time_limit_seconds else "-"
+                table.add_row(
+                    str(cr.cycle_number),
+                    f"{cr.accuracy:.0%}",
+                    status,
+                    f"{cr.exercises_correct}/{cr.exercises_attempted}",
+                    limit,
+                    cr.completed_at.strftime("%Y-%m-%d %H:%M"),
+                )
+            console.print(table)
+        else:
+            console.print("[dim]  No completed cycles yet.[/dim]")
+
+
+@bundle_app.command("reset")
+def bundle_reset(
+    slug: str = typer.Argument(help="Bundle slug"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Reset training progress for a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if not force:
+        if not typer.confirm(f"Reset progress for '{slug}'?", default=False):
+            raise typer.Abort()
+
+    bundle_id = generate_bundle_id(validated)
+
+    with get_repo(db) as repo:
+        bundle = repo.bundles.get(bundle_id)
+        if not bundle:
+            console.print(f"[red]Bundle not found: {slug}[/red]")
+            raise typer.Exit(1)
+
+        repo.bundles.reset_progress(bundle_id)
+        console.print(f"[green]\u2713[/green] Reset progress for: {slug}")
+
+
 config_app = typer.Typer(help="Configuration management")
 app.add_typer(config_app, name="config")
 

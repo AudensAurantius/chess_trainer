@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Bundles - Chess Trainer{% endblock %}
+
+{% block content %}
+<h1>Exercise Bundles</h1>
+
+<div class="bundles-grid">
+    {% for bundle in bundles %}
+    <div class="bundle-card">
+        <h3>{{ bundle.name }}</h3>
+        <p class="bundle-meta">
+            {{ bundle.exercise_count }} exercises
+            {% if bundle.woodpecker_mode %} &middot; Woodpecker{% endif %}
+            {% if bundle.completed_cycles > 0 %} &middot; Cycle {{ bundle.current_cycle }}{% endif %}
+        </p>
+        {% if bundle.description %}
+        <p class="bundle-desc">{{ bundle.description }}</p>
+        {% endif %}
+        <div class="bundle-actions">
+            <button class="btn btn-primary" onclick="startBundle('{{ bundle.slug }}')">Train</button>
+            <button class="btn btn-secondary" onclick="deleteBundle('{{ bundle.slug }}')" title="Delete">Delete</button>
+        </div>
+    </div>
+    {% else %}
+    <p>No bundles yet. Create one using the CLI:</p>
+    <code>chess-trainer bundle create my-bundle --woodpecker</code>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function startBundle(slug) {
+    const resp = await fetch(`/api/bundles/${slug}/train`, {method: 'POST'});
+    const data = await resp.json();
+    if (data.error) {
+        alert(data.error);
+    } else {
+        window.location.href = '/train';
+    }
+}
+
+async function deleteBundle(slug) {
+    if (!confirm(`Delete bundle "${slug}"?`)) return;
+    const resp = await fetch(`/api/bundles/${slug}`, {method: 'DELETE'});
+    if (resp.ok) {
+        window.location.reload();
+    }
+}
+</script>
+{% endblock %}

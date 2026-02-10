@@ -190,6 +190,153 @@ async def api_analytics_streaks(request: Request):
     return JSONResponse(result)
 
 
+# --- Bundle endpoints ---
+
+
+@router.get("/bundles", response_class=HTMLResponse)
+async def bundles_page(request: Request):
+    """Render the bundles management page."""
+    manager = _manager(request)
+    bundles = manager.list_bundles()
+    return _templates(request).TemplateResponse(
+        request, "bundles.html", {"bundles": bundles}
+    )
+
+
+@router.get("/api/bundles")
+async def api_bundles_list(request: Request):
+    """List all bundles."""
+    manager = _manager(request)
+    return JSONResponse({"bundles": manager.list_bundles()})
+
+
+@router.post("/api/bundles")
+async def api_bundles_create(request: Request):
+    """Create a new bundle."""
+    from ..exercises.bundle import (
+        BundleConfig,
+        ExerciseBundle,
+        WoodpeckerCycle,
+        generate_bundle_id,
+        validate_slug,
+    )
+
+    body = await request.json()
+    slug = body.get("slug", "")
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    woodpecker = body.get("woodpecker", False)
+    woodpecker_cycles = []
+    if woodpecker:
+        woodpecker_cycles = [
+            WoodpeckerCycle(cycle_number=1, rest_days=0, time_limit_seconds=None),
+            WoodpeckerCycle(cycle_number=2, rest_days=1, time_limit_seconds=None),
+            WoodpeckerCycle(cycle_number=3, rest_days=3, time_limit_seconds=60),
+            WoodpeckerCycle(cycle_number=4, rest_days=7, time_limit_seconds=30),
+        ]
+
+    bundle = ExerciseBundle(
+        id=generate_bundle_id(validated),
+        name=body.get("name") or validated.replace("-", " ").title(),
+        description=body.get("description", ""),
+        config=BundleConfig(
+            woodpecker_mode=woodpecker,
+            woodpecker_cycles=woodpecker_cycles,
+            pass_threshold=body.get("threshold", 0.9),
+            shuffle=body.get("shuffle", False),
+        ),
+    )
+
+    manager = _manager(request)
+    repo = manager._open_repo()
+    try:
+        repo.bundles.create(bundle)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+
+    return JSONResponse({"status": "created", "id": bundle.id})
+
+
+@router.get("/api/bundles/{slug}")
+async def api_bundles_detail(request: Request, slug: str):
+    """Get bundle detail with progress."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    manager = _manager(request)
+    repo = manager._open_repo()
+    bundle = repo.bundles.get(generate_bundle_id(validated))
+    if not bundle:
+        return JSONResponse({"error": "Bundle not found"}, status_code=404)
+
+    progress = repo.bundles.get_progress(bundle.id)
+    return JSONResponse({
+        "id": bundle.id,
+        "name": bundle.name,
+        "description": bundle.description,
+        "exercise_count": bundle.exercise_count,
+        "exercise_ids": bundle.exercise_ids[:50],
+        "config": bundle.config.to_dict(),
+        "progress": progress.to_dict() if progress else None,
+    })
+
+
+@router.delete("/api/bundles/{slug}")
+async def api_bundles_delete(request: Request, slug: str):
+    """Delete a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    manager = _manager(request)
+    repo = manager._open_repo()
+    deleted = repo.bundles.delete(generate_bundle_id(validated))
+    if not deleted:
+        return JSONResponse({"error": "Bundle not found"}, status_code=404)
+    return JSONResponse({"status": "deleted"})
+
+
+@router.post("/api/bundles/{slug}/train")
+async def api_bundles_train(request: Request, slug: str):
+    """Start a bundle training session."""
+    manager = _manager(request)
+    result = manager.start_bundle_session(slug)
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return JSONResponse(result)
+
+
+@router.get("/api/bundles/{slug}/progress")
+async def api_bundles_progress(request: Request, slug: str):
+    """Get cycle history for a bundle."""
+    from ..exercises.bundle import generate_bundle_id, validate_slug
+
+    try:
+        validated = validate_slug(slug)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    manager = _manager(request)
+    repo = manager._open_repo()
+    progress = repo.bundles.get_progress(generate_bundle_id(validated))
+    if not progress:
+        return JSONResponse({"cycles": [], "current_cycle": 1})
+    return JSONResponse({
+        "current_cycle": progress.current_cycle,
+        "cycles": [c.to_dict() for c in progress.completed_cycles],
+    })
+
+
 @router.get("/api/analytics/retention")
 async def api_analytics_retention(request: Request):
     """Get retention curve data."""

@@ -41,6 +41,7 @@ class SessionManager:
         """Initialize session manager with app config."""
         self.config = config
         self._session: TrainingSession | None = None
+        self._woodpecker_session = None
         self._repo: Repository | None = None
         self._exercise_state: ExerciseState | None = None
 
@@ -317,6 +318,210 @@ class SessionManager:
         return {
             "exercise_count": exercise_count,
             **card_stats,
+        }
+
+    # ── Bundle session support ─────────────────────────────────────────────
+
+    def list_bundles(self) -> list[dict]:
+        """List all bundles with progress info."""
+        repo = self._open_repo()
+        bundles = repo.bundles.list_all()
+        result = []
+        for b in bundles:
+            progress = repo.bundles.get_progress(b.id)
+            result.append({
+                "id": b.id,
+                "slug": b.slug,
+                "name": b.name,
+                "description": b.description,
+                "exercise_count": b.exercise_count,
+                "woodpecker_mode": b.config.woodpecker_mode,
+                "current_cycle": progress.current_cycle if progress else 1,
+                "completed_cycles": len(progress.completed_cycles) if progress else 0,
+            })
+        return result
+
+    def start_bundle_session(self, slug: str) -> dict:
+        """Start a bundle training session.
+
+        Args:
+            slug: The bundle slug.
+
+        Returns:
+            Dict with session info.
+        """
+        from ..exercises.bundle import generate_bundle_id, validate_slug
+        from ..training.woodpecker import WoodpeckerSession
+
+        # End any existing training session but keep the repo open
+        self._session = None
+        self._woodpecker_session = None
+        self._exercise_state = None
+        repo = self._open_repo()
+
+        validated = validate_slug(slug)
+        bundle_id = generate_bundle_id(validated)
+        bundle = repo.bundles.get(bundle_id)
+        if bundle is None:
+            return {"error": f"Bundle not found: {slug}"}
+
+        if not bundle.exercise_ids:
+            return {"error": f"Bundle '{slug}' has no exercises"}
+
+        progress = repo.bundles.get_progress(bundle_id)
+        self._woodpecker_session = WoodpeckerSession(repo, bundle, progress)
+        self._woodpecker_session.start()
+
+        return {
+            "status": "started",
+            "bundle": bundle.name,
+            "queue_size": self._woodpecker_session.remaining,
+            "cycle": self._woodpecker_session.progress.current_cycle,
+            "time_limit": self._woodpecker_session.time_limit,
+        }
+
+    def get_bundle_time_limit(self) -> int | None:
+        """Get the current bundle session time limit."""
+        if hasattr(self, "_woodpecker_session") and self._woodpecker_session:
+            return self._woodpecker_session.time_limit
+        return None
+
+    def next_bundle_exercise(self) -> ExerciseState | None:
+        """Get the next exercise from the bundle session."""
+        if not hasattr(self, "_woodpecker_session") or not self._woodpecker_session:
+            return None
+
+        ws = self._woodpecker_session
+        exercise = ws.next()
+        if exercise is None:
+            self._exercise_state = None
+            return None
+
+        solution = exercise.get_solution()
+        solution_uci = [m.uci() for m in solution]
+
+        self._exercise_state = ExerciseState(
+            exercise=exercise,
+            fen=exercise.fen,
+            side_to_move=exercise.side_to_move,
+            challenge=exercise.get_challenge(),
+            solution_uci=solution_uci,
+        )
+        return self._exercise_state
+
+    def submit_bundle_move(self, move_uci: str) -> dict:
+        """Submit a move for the current bundle exercise."""
+        if not hasattr(self, "_woodpecker_session") or not self._woodpecker_session:
+            return {"valid": False, "feedback": "No active bundle session"}
+
+        if not self._exercise_state:
+            return {"valid": False, "feedback": "No active exercise"}
+
+        state = self._exercise_state
+        solution = state.exercise.get_solution()
+        user_move_indices = list(range(0, len(solution), 2))
+
+        user_step = state.move_index
+        if user_step >= len(user_move_indices):
+            return {"valid": False, "feedback": "Exercise already complete"}
+
+        expected_idx = user_move_indices[user_step]
+        expected_move = solution[expected_idx]
+
+        try:
+            move = chess.Move.from_uci(move_uci)
+        except (chess.InvalidMoveError, ValueError):
+            return {"valid": False, "feedback": "Invalid move format"}
+
+        if move not in state.board.legal_moves:
+            return {"valid": False, "feedback": "Illegal move"}
+
+        state.board.push(move)
+        is_correct_move = move == expected_move
+        is_last_user_move = user_step == len(user_move_indices) - 1
+
+        ws = self._woodpecker_session
+
+        if not is_correct_move:
+            state.submitted = True
+            user_moves = [solution[user_move_indices[i]] for i in range(user_step)]
+            user_moves.append(move)
+            result, over_time = ws.submit(user_moves, 0)
+            return {
+                "valid": True,
+                "correct": False,
+                "finished": True,
+                "over_time": over_time,
+                "opponent_move": None,
+                "feedback": result.feedback,
+                "fen": state.board.fen(),
+            }
+
+        opponent_move = None
+        opponent_idx = expected_idx + 1
+        if opponent_idx < len(solution):
+            opp = solution[opponent_idx]
+            opponent_move = opp.uci()
+            state.board.push(opp)
+
+        state.move_index += 1
+
+        if is_last_user_move:
+            state.submitted = True
+            user_moves = [solution[i] for i in user_move_indices]
+            result, over_time = ws.submit(user_moves, 0)
+            return {
+                "valid": True,
+                "correct": True,
+                "finished": True,
+                "over_time": over_time,
+                "opponent_move": opponent_move,
+                "feedback": result.feedback,
+                "fen": state.board.fen(),
+            }
+
+        return {
+            "valid": True,
+            "correct": True,
+            "finished": False,
+            "over_time": False,
+            "opponent_move": opponent_move,
+            "feedback": "Correct! Keep going...",
+            "fen": state.board.fen(),
+        }
+
+    def rate_bundle(self, rating_value: int) -> dict:
+        """Apply a rating in the bundle session."""
+        if not hasattr(self, "_woodpecker_session") or not self._woodpecker_session:
+            return {"error": "No active bundle session"}
+
+        from ..scheduling.fsrs import Rating
+
+        rating = Rating(rating_value)
+        ws = self._woodpecker_session
+        ws.rate(rating)
+
+        return {
+            "remaining": ws.remaining,
+            "cycle": ws.progress.current_cycle,
+        }
+
+    def end_bundle_session(self) -> dict | None:
+        """End the bundle session and return cycle result."""
+        if not hasattr(self, "_woodpecker_session") or not self._woodpecker_session:
+            return None
+
+        ws = self._woodpecker_session
+        cycle_result = ws.end_cycle()
+        self._woodpecker_session = None
+        self._exercise_state = None
+
+        return {
+            "cycle_number": cycle_result.cycle_number,
+            "accuracy": cycle_result.accuracy,
+            "passed": cycle_result.passed,
+            "exercises_attempted": cycle_result.exercises_attempted,
+            "exercises_correct": cycle_result.exercises_correct,
         }
 
     def _get_analytics_store(self):
