@@ -58,6 +58,7 @@ class ReviewCard:
         delta = datetime.now() - self.due
         return delta.total_seconds() / 86400
 
+    # TODO: Simplify using dataclasses.asdict.
     def to_dict(self) -> dict[str, Any]:
         """Serialize card to dictionary for storage."""
         return {
@@ -74,6 +75,7 @@ class ReviewCard:
             "created_at": self.created_at.isoformat(),
         }
 
+    # TODO: Consider simplifying using dataclasses-json or similar.
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ReviewCard":
         """Deserialize card from dictionary."""

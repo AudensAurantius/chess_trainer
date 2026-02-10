@@ -27,6 +27,7 @@ def _load_ndjson(response: Response) -> JsonGenerator:
     yield from map(json.loads, response.iter_lines())
 
 
+# TODO: Remove this function?
 def _handle_response(
     response: Response,
     url: str,
@@ -56,6 +57,8 @@ def _handle_response(
         return response
 
 
+# TODO: Remove this function?
+# TODO: Fix type errors
 def _get_headers(
     oauth_token: str | bool | None = None,
     content_type: str | bool | None = None,

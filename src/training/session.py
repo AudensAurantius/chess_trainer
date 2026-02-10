@@ -188,6 +188,7 @@ class TrainingSession:
 
         return self._current_exercise
 
+    # TODO: Fix typing error in return type
     def submit(
         self,
         moves: list[chess.Move],

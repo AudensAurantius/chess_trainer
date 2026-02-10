@@ -133,6 +133,8 @@ class AppConfig:
     tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
 
 
+# TODO: Consider simplifying using dataclasses-json or similar
+# Validation of parsed config can be moved to a __post_init__ method
 def _apply_toml(config: AppConfig, data: dict) -> None:
     """Apply TOML data onto an AppConfig, mutating in place."""
     if "database" in data:
@@ -326,6 +328,8 @@ def load_config(path: Path | None = None) -> AppConfig:
     return config
 
 
+# TODO: Consider using dataclass default values and dataclasses-json
+# or similar to simplify serialization of default config
 def generate_default_config() -> str:
     """Generate a default TOML config file as a string.
 

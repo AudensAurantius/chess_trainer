@@ -164,6 +164,7 @@ class CardStore:
         ).fetchone()
         return result[0] if result else 0
 
+    # TODO: Fix "Object of NoneType is not subscriptable" typing errors
     def get_stats(self) -> dict:
         """Get overall statistics about the card collection."""
         state_counts = self.count_by_state()

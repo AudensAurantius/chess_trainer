@@ -1,4 +1,5 @@
 """Main repository class managing DuckDB connection and stores."""
+# TODO: Consider adding a database migration history.
 
 from pathlib import Path
 from typing import TYPE_CHECKING

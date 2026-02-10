@@ -260,6 +260,7 @@ class TablebaseManager:
 
         return self._parse_lichess_response(data, board)
 
+    # TODO: Why is the board parameter not accessed?
     def _parse_lichess_response(self, data: dict, board: chess.Board) -> TablebaseResult:
         """Parse a Lichess tablebase API response into a TablebaseResult."""
         category = data.get("category", "unknown")

@@ -33,6 +33,9 @@ class FSRSParameters:
     These defaults are optimized from large-scale Anki data analysis.
     Individual users can have personalized parameters derived from
     their review history.
+
+    TODO: Store weights in a data file (JSON, YAML, or similar)
+    instead of hardcoding them in this dataclass.
     """
 
     # Initial stability values for each rating on first review

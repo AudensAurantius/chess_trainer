@@ -9,7 +9,8 @@ from rich.progress import Progress
 
 from .. import get_logger
 from ..http import JsonGenerator, JsonObject, _get_headers, _handle_response
-from .constants import LICHESS_API, LICHESS_TOKEN, get_difficulty, get_valid_theme
+from .constants import (LICHESS_API, LICHESS_TOKEN, get_difficulty,
+                        get_valid_theme)
 
 logger = get_logger(__name__)
 
@@ -68,6 +69,7 @@ def post_lichess(
     return _handle_response(response, url)
 
 
+# TODO: Fix return type error
 def get_daily_puzzle() -> JsonObject:
     """Fetch today's Lichess daily puzzle.
 
@@ -78,6 +80,7 @@ def get_daily_puzzle() -> JsonObject:
     return get_lichess("puzzle/daily")
 
 
+# TODO: Fix return type error
 def get_puzzle_by_id(puzzle_id: str) -> JsonObject:
     """Fetch a specific puzzle by ID.
 
@@ -91,6 +94,7 @@ def get_puzzle_by_id(puzzle_id: str) -> JsonObject:
     return get_lichess(f"puzzle/{puzzle_id}")
 
 
+# TODO: Fix type errors
 def get_random_puzzle(
     difficulty: str | int | None = None,
     theme: str | None = None,
@@ -127,6 +131,7 @@ def get_random_puzzle(
     return get_lichess("puzzle/next", query_params=params, auth=filter_seen)
 
 
+# TODO: Fix return type error
 def random_puzzles(
     difficulties: dict[str | int, int | float] | list[str | int] | None = None,
     themes: dict[str, int | float] | list[str] | None = None,
@@ -196,6 +201,8 @@ def random_puzzles(
         yield get_lichess("puzzle/next", query_params=params, auth=filter_seen)
 
 
+# TODO: Fix return type error
+# TODO: Fix "int is not iterable" type error
 def get_games(*game_ids: str) -> Iterator[JsonObject]:
     """Export one or more games by ID.
 
@@ -223,6 +230,7 @@ def get_game(game_id: str) -> JsonObject:
     return list(get_games(game_id))[0]
 
 
+# TODO: Fix return type error
 def get_puzzle_history(limit: int = 100) -> Iterator[JsonObject]:
     """Fetch the authenticated user's puzzle history.
 
@@ -238,6 +246,7 @@ def get_puzzle_history(limit: int = 100) -> Iterator[JsonObject]:
     )
 
 
+# TODO: Fix return type error
 def get_user_games(
     username: str,
     *,
