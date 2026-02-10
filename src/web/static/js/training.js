@@ -11,12 +11,18 @@ let awaitingRating = false;
 async function startSession() {
     const maxNew = parseInt(document.getElementById('max-new').value) || 10;
     const maxReviews = parseInt(document.getElementById('max-reviews').value) || 50;
+    const tagsInput = document.getElementById('include-tags').value.trim();
+    const includeTags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : null;
 
     try {
+        const body = { max_new: maxNew, max_reviews: maxReviews };
+        if (includeTags && includeTags.length > 0) {
+            body.include_tags = includeTags;
+        }
         const res = await fetch('/api/session/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ max_new: maxNew, max_reviews: maxReviews }),
+            body: JSON.stringify(body),
         });
 
         if (!res.ok) {

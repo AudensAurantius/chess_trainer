@@ -81,12 +81,14 @@ class SessionManager:
         self,
         max_new: int | None = None,
         max_reviews: int | None = None,
+        include_tags: list[str] | None = None,
     ) -> int:
         """Start a new training session.
 
         Args:
             max_new: Override max new cards (uses config default if None).
             max_reviews: Override max reviews (uses config default if None).
+            include_tags: Optional list of tags to filter exercises by.
 
         Returns:
             Number of cards in the queue.
@@ -99,6 +101,7 @@ class SessionManager:
             max_new_cards=max_new or self.config.training.max_new_cards,
             max_reviews=max_reviews or self.config.training.max_reviews,
             interleave_new=self.config.training.interleave_new,
+            include_tags=include_tags,
         )
         self._session = TrainingSession(repo, session_config)
         self._session.start()
