@@ -94,6 +94,10 @@ def import_puzzles(
 
         console.print(f"\n[green]\u2713[/green] {result}")
 
+        # Sync system tags to the normalized tags table
+        if result.total_added > 0:
+            _sync_system_tags(repo, source="lichess")
+
         if result.errors:
             console.print("[yellow]Errors:[/yellow]")
             for error in result.errors[:5]:
@@ -128,6 +132,7 @@ def import_chesscom_puzzles(
                 existing = repo.cards.get(exercise.id)
                 if not existing:
                     repo.cards.get_or_create(exercise.id)
+            _sync_system_tags(repo, source="chesscom")
 
         if result.errors:
             console.print("[yellow]Errors:[/yellow]")
@@ -172,6 +177,15 @@ def stats(
                 table.add_row(f"  {state}", str(count))
 
             console.print(table)
+
+
+def _sync_system_tags(repo: Repository, source: str) -> None:
+    """Sync exercise JSON tags into the normalized tags table."""
+    from ..storage.tag_store import EntityType, TagSource
+
+    for exercise in repo.exercises.search(source=source):
+        if exercise.tags:
+            repo.tags.add_tags(EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM)
 
 
 def _parse_move(board: chess.Board, text: str) -> chess.Move | None:
@@ -297,6 +311,10 @@ def train(
     new_cards: int = typer.Option(10, "--new", "-n", help="Max new cards"),
     reviews: int = typer.Option(50, "--reviews", "-r", help="Max reviews"),
     exercise_type: str | None = typer.Option(None, "--type", "-t", help="Exercise type filter"),
+    include_tag: list[str] | None = typer.Option(None, "--tag", help="Filter by tag (repeatable)"),
+    exclude_tag: list[str] | None = typer.Option(
+        None, "--exclude-tag", help="Exclude by tag (repeatable)"
+    ),
     self_report: bool = typer.Option(
         False, "--self-report", "-s", help="Self-report mode (no move input)"
     ),
@@ -318,6 +336,8 @@ def train(
             max_new_cards=new_cards,
             max_reviews=reviews,
             exercise_types=type_filter,
+            include_tags=include_tag or None,
+            exclude_tags=exclude_tag or None,
             interleave_new=cfg.training.interleave_new,
         )
 
@@ -679,6 +699,183 @@ def _show_retention(store) -> None:
 
     console.print(table)
     console.print()
+
+
+# ── Tag subcommand group ──────────────────────────────────────────────────────
+
+tag_app = typer.Typer(help="Manage custom tags on exercises and openings")
+app.add_typer(tag_app, name="tag")
+
+
+@tag_app.command("add")
+def tag_add(
+    entity_id: str = typer.Argument(help="Exercise or opening ID"),
+    tags: list[str] = typer.Argument(help="Tags to add"),
+    entity_type: str = typer.Option("exercise", "--type", "-t", help="Entity type: exercise or opening"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Add custom tags to an exercise or opening."""
+    from ..storage.tag_store import EntityType, TagSource
+
+    try:
+        etype = EntityType(entity_type.lower())
+    except ValueError:
+        console.print(f"[red]Invalid type: {entity_type}. Use 'exercise' or 'opening'.[/red]")
+        raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        # Validate entity exists
+        if etype == EntityType.EXERCISE:
+            if not repo.exercises.get(entity_id):
+                console.print(f"[red]Exercise not found: {entity_id}[/red]")
+                raise typer.Exit(1)
+        elif etype == EntityType.OPENING:
+            if not repo.openings.get_line(entity_id):
+                console.print(f"[red]Opening line not found: {entity_id}[/red]")
+                raise typer.Exit(1)
+
+        count = repo.tags.add_tags(etype, entity_id, tags, TagSource.USER)
+        console.print(f"[green]\u2713[/green] Added {count} tag(s) to {entity_id}")
+
+
+@tag_app.command("remove")
+def tag_remove(
+    entity_id: str = typer.Argument(help="Exercise or opening ID"),
+    tags: list[str] = typer.Argument(help="Tags to remove"),
+    entity_type: str = typer.Option("exercise", "--type", "-t", help="Entity type: exercise or opening"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Remove tags from an exercise or opening."""
+    from ..storage.tag_store import EntityType
+
+    try:
+        etype = EntityType(entity_type.lower())
+    except ValueError:
+        console.print(f"[red]Invalid type: {entity_type}. Use 'exercise' or 'opening'.[/red]")
+        raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        count = repo.tags.remove_tags(etype, entity_id, tags)
+        console.print(f"[green]\u2713[/green] Removed {count} tag(s) from {entity_id}")
+
+
+@tag_app.command("list")
+def tag_list(
+    entity_type: str | None = typer.Option(None, "--type", "-t", help="Filter by entity type"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Filter by source: user or system"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """List all tags with their usage counts."""
+    from ..storage.tag_store import EntityType
+
+    etype = None
+    if entity_type:
+        try:
+            etype = EntityType(entity_type.lower())
+        except ValueError:
+            console.print(f"[red]Invalid type: {entity_type}[/red]")
+            raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        all_tags = repo.tags.list_all_tags(entity_type=etype)
+
+        if not all_tags:
+            console.print("[yellow]No tags found.[/yellow]")
+            return
+
+        # Filter by source if requested (post-filter since list_all_tags doesn't take source)
+        if source:
+            # Re-query with source filter
+            if etype is not None:
+                rows = repo.conn.execute(
+                    "SELECT tag, COUNT(*) AS cnt FROM tags WHERE entity_type = ? AND source = ? GROUP BY tag ORDER BY cnt DESC, tag",
+                    [etype.value, source.lower()],
+                ).fetchall()
+            else:
+                rows = repo.conn.execute(
+                    "SELECT tag, COUNT(*) AS cnt FROM tags WHERE source = ? GROUP BY tag ORDER BY cnt DESC, tag",
+                    [source.lower()],
+                ).fetchall()
+            from ..storage.tag_store import TagInfo
+
+            all_tags = [TagInfo(tag=r[0], count=int(r[1])) for r in rows]
+
+        if not all_tags:
+            console.print("[yellow]No tags found.[/yellow]")
+            return
+
+        table = Table(title="Tags")
+        table.add_column("Tag", style="bold")
+        table.add_column("Count", justify="right")
+
+        for t in all_tags:
+            table.add_row(t.tag, str(t.count))
+
+        console.print(table)
+
+
+@tag_app.command("show")
+def tag_show(
+    entity_id: str = typer.Argument(help="Exercise or opening ID"),
+    entity_type: str = typer.Option("exercise", "--type", "-t", help="Entity type"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Show tags for a specific exercise or opening, grouped by source."""
+    from ..storage.tag_store import EntityType, TagSource
+
+    try:
+        etype = EntityType(entity_type.lower())
+    except ValueError:
+        console.print(f"[red]Invalid type: {entity_type}[/red]")
+        raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        user_tags = repo.tags.get_tags(etype, entity_id, source=TagSource.USER)
+        system_tags = repo.tags.get_tags(etype, entity_id, source=TagSource.SYSTEM)
+
+        if not user_tags and not system_tags:
+            console.print(f"[yellow]No tags for {entity_id}[/yellow]")
+            return
+
+        console.print(f"[bold]Tags for {entity_id}[/bold]\n")
+        if user_tags:
+            console.print(f"[cyan]User:[/cyan] {', '.join(user_tags)}")
+        if system_tags:
+            console.print(f"[dim]System:[/dim] {', '.join(system_tags)}")
+
+
+@tag_app.command("search")
+def tag_search(
+    query: str = typer.Argument(help="Substring to search for"),
+    entity_type: str | None = typer.Option(None, "--type", "-t", help="Filter by entity type"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Search tags by substring match."""
+    from ..storage.tag_store import EntityType
+
+    etype = None
+    if entity_type:
+        try:
+            etype = EntityType(entity_type.lower())
+        except ValueError:
+            console.print(f"[red]Invalid type: {entity_type}[/red]")
+            raise typer.Exit(1)
+
+    with get_repo(db) as repo:
+        matches = repo.tags.search_tags(query, entity_type=etype)
+
+        if not matches:
+            console.print(f"[yellow]No tags matching '{query}'[/yellow]")
+            return
+
+        table = Table(title=f"Tags matching '{query}'")
+        table.add_column("Tag", style="bold")
+        table.add_column("Count", justify="right")
+
+        for t in matches:
+            table.add_row(t.tag, str(t.count))
+
+        console.print(table)
 
 
 config_app = typer.Typer(help="Configuration management")
@@ -1616,6 +1813,7 @@ def import_games(
                     existing = repo.cards.get(exercise.id)
                     if not existing:
                         repo.cards.get_or_create(exercise.id)
+                _sync_system_tags(repo, source=source_tag)
 
             if result.errors:
                 console.print("[yellow]Errors:[/yellow]")
