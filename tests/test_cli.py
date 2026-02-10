@@ -8,7 +8,6 @@ from rich.text import Text
 from typer.testing import CliRunner
 
 from src.cli.app import _format_next_review, _parse_move, app
-from src.config import AppConfig
 from src.cli.board import (
     PIECE_SYMBOLS,
     format_move_san,
@@ -16,6 +15,7 @@ from src.cli.board import (
     render_board,
     render_board_simple,
 )
+from src.config import AppConfig
 from src.exercises import TacticExercise
 from src.importers.base import ImportResult
 

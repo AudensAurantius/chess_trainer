@@ -9,8 +9,7 @@ from rich.progress import Progress
 
 from .. import get_logger
 from ..http import JsonGenerator, JsonObject, _get_headers, _handle_response
-from .constants import (LICHESS_API, LICHESS_TOKEN, get_difficulty,
-                        get_valid_theme)
+from .constants import LICHESS_API, LICHESS_TOKEN, get_difficulty, get_valid_theme
 
 logger = get_logger(__name__)
 
