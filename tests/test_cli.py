@@ -8,6 +8,7 @@ from rich.text import Text
 from typer.testing import CliRunner
 
 from src.cli.app import _format_next_review, _parse_move, app
+from src.config import AppConfig
 from src.cli.board import (
     PIECE_SYMBOLS,
     format_move_san,
@@ -445,7 +446,8 @@ class TestConfigGetCommand:
     """Tests for config get command."""
 
     def test_valid_key(self):
-        result = runner.invoke(app, ["config", "get", "web.port"])
+        with patch("src.cli.app.load_config", return_value=AppConfig()):
+            result = runner.invoke(app, ["config", "get", "web.port"])
         assert result.exit_code == 0
         assert "web.port" in result.output
         assert "8000" in result.output
