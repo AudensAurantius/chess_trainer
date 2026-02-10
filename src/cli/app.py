@@ -2198,6 +2198,113 @@ def _generate_endgame_exercises(phases: list, tb_mgr, db_path, max_exercises: in
 
 
 @app.command()
+def scan(
+    image_path: Path = typer.Argument(help="Path to a chess board image (PNG, JPG, etc.)"),
+    backend: str | None = typer.Option(
+        None, "--backend", "-b", help="Vision backend: claude, openai, or local"
+    ),
+    analyze_pos: bool = typer.Option(
+        False, "--analyze", "-a", help="Run engine analysis on the recognized position"
+    ),
+    depth: int | None = typer.Option(None, "--depth", "-d", help="Engine analysis depth"),
+):
+    """Scan a chess board image and recognize the position (experimental)."""
+    from ..config import is_experimental_enabled
+    from ..vision import VisionError, get_backend
+
+    cfg = _get_config()
+
+    # Gate check
+    if not is_experimental_enabled(cfg, "vision"):
+        console.print(
+            "[red]Vision import is an experimental feature.[/red]\n\n"
+            "To enable it, set both flags in your config:\n"
+            "  chess-trainer config set experimental.enabled true\n"
+            "  chess-trainer config set experimental.vision true\n\n"
+            "Then configure a backend:\n"
+            "  chess-trainer config set experimental.vision_backend claude\n"
+            "  chess-trainer config set experimental.claude_api_key YOUR_KEY\n\n"
+            "Or set the ANTHROPIC_API_KEY / OPENAI_API_KEY environment variable."
+        )
+        raise typer.Exit(1)
+
+    # Validate image exists
+    if not image_path.is_file():
+        console.print(f"[red]Image file not found: {image_path}[/red]")
+        raise typer.Exit(1)
+
+    # Override backend if CLI flag provided
+    if backend:
+        cfg.experimental.vision_backend = backend
+
+    # Get backend
+    try:
+        vision_backend = get_backend(cfg)
+    except VisionError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    # Recognize
+    try:
+        with console.status(f"Recognizing board with {vision_backend.name} backend..."):
+            result = vision_backend.recognize(image_path)
+    except VisionError as e:
+        console.print(f"[red]Recognition failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Validate FEN with python-chess
+    try:
+        board = chess.Board(result.fen)
+    except ValueError:
+        console.print(f"[red]Invalid FEN returned: {result.fen!r}[/red]")
+        raise typer.Exit(1)
+
+    # Display result
+    flipped = board.turn == chess.BLACK
+    console.print(render_board(board, flipped=flipped))
+    console.print()
+    console.print(f"[bold]FEN:[/bold] {result.fen}")
+    console.print(f"[dim]Confidence: {result.confidence:.0%} | Backend: {result.backend}[/dim]")
+
+    # Ask for confirmation
+    if not typer.confirm("\nDoes this look correct?", default=True):
+        corrected = typer.prompt("Enter the correct FEN (or press Ctrl+C to cancel)")
+        try:
+            board = chess.Board(corrected)
+            result = type(result)(fen=corrected, confidence=1.0, backend="manual")
+        except ValueError:
+            console.print(f"[red]Invalid FEN: {corrected}[/red]")
+            raise typer.Exit(1)
+
+        console.print()
+        console.print(render_board(board, flipped=board.turn == chess.BLACK))
+        console.print(f"[bold]FEN:[/bold] {result.fen}")
+
+    # Optional engine analysis
+    if analyze_pos:
+        from ..analysis import EngineError, EngineManager
+
+        analysis_depth = depth or cfg.engine.default_depth
+
+        try:
+            with EngineManager(
+                path=cfg.engine.path,
+                hash_mb=cfg.engine.hash_mb,
+                threads=cfg.engine.threads,
+            ) as engine_mgr:
+                analysis_result = engine_mgr.analyze(
+                    board,
+                    depth=analysis_depth,
+                    multipv=cfg.engine.default_multipv,
+                )
+                console.print()
+                _static_analysis(board, analysis_result, flipped=flipped)
+        except EngineError as e:
+            console.print(f"[red]Analysis error: {e}[/red]")
+            raise typer.Exit(1)
+
+
+@app.command()
 def web(
     host: str = typer.Option(None, "--host", "-H", help="Bind host"),
     port: int = typer.Option(None, "--port", "-p", help="Bind port"),
