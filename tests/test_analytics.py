@@ -58,6 +58,12 @@ def _seed_analytics_data(repo: Repository) -> None:
             """,
             [ex_id, ex_type, SAMPLE_FEN, json.dumps(tags), difficulty, datetime.now()],
         )
+        # Populate normalized tags table
+        for tag in tags:
+            repo.conn.execute(
+                "INSERT INTO tags (entity_type, entity_id, tag, source) VALUES ('exercise', ?, ?, 'system') ON CONFLICT DO NOTHING",
+                [ex_id, tag.lower()],
+            )
 
     # Create review cards with varying reps/lapses/stability
     cards = [
