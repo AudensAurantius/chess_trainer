@@ -756,7 +756,13 @@ def config_show() -> None:
             f"[bold]chesscom.request_delay[/bold] = {cfg.chesscom.request_delay}\n"
             f"[bold]tablebase.syzygy_path[/bold] = {cfg.tablebase.syzygy_path or '(not set)'}\n"
             f"[bold]tablebase.use_lichess_fallback[/bold] = {cfg.tablebase.use_lichess_fallback}\n"
-            f"[bold]tablebase.max_pieces[/bold] = {cfg.tablebase.max_pieces}",
+            f"[bold]tablebase.max_pieces[/bold] = {cfg.tablebase.max_pieces}\n"
+            f"[bold]experimental.enabled[/bold] = {cfg.experimental.enabled}\n"
+            f"[bold]experimental.vision[/bold] = {cfg.experimental.vision}\n"
+            f"[bold]experimental.vision_backend[/bold] = {cfg.experimental.vision_backend}\n"
+            f"[bold]experimental.claude_api_key[/bold] = {'***' if cfg.experimental.claude_api_key else '(not set)'}\n"
+            f"[bold]experimental.openai_api_key[/bold] = {'***' if cfg.experimental.openai_api_key else '(not set)'}\n"
+            f"[bold]experimental.local_model_path[/bold] = {cfg.experimental.local_model_path or '(not set)'}",
             title="Effective Configuration",
         )
     )
@@ -780,7 +786,8 @@ def config_get(
         raise typer.Exit(1)
 
     # Mask sensitive values
-    if key == "lichess.token" and value is not None:
+    sensitive_keys = {"lichess.token", "experimental.claude_api_key", "experimental.openai_api_key"}
+    if key in sensitive_keys and value is not None:
         display = "***"
     elif value is None:
         display = "(not set)"

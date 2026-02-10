@@ -219,6 +219,18 @@ endgame-replay fen *args:
 endgame-generate fen *args:
     uv run {{ project_name }} endgame-masters "{{ fen }}" --generate {{ args }}
 
+# ─── vision ──────────────────────────────────────────────────────────────────
+
+[group: 'vision']
+[doc('Scan a chess board image and recognize the position')]
+scan image *args:
+    uv run {{ project_name }} scan "{{ image }}" {{ args }}
+
+[group: 'vision']
+[doc('Scan an image and run engine analysis on the result')]
+scan-analyze image *args:
+    uv run {{ project_name }} scan "{{ image }}" --analyze {{ args }}
+
 # ─── config ───────────────────────────────────────────────────────────────────
 
 [group: 'config']
