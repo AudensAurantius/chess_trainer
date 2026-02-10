@@ -13,6 +13,7 @@ from ..exercises import Exercise, ExerciseResult, ExerciseType
 from ..scheduling import CardState, FSRSParameters, FSRSScheduler, ReviewCard
 from ..scheduling.fsrs import Rating, SchedulingResult
 from ..storage import Repository
+from ..storage.tag_store import EntityType
 
 
 @dataclass
@@ -117,6 +118,37 @@ class TrainingSession:
             new_cards = [
                 c for c in new_cards if self._get_exercise_type(c.exercise_id) in type_names
             ]
+
+        # Filter by tags if specified
+        if self.config.include_tags or self.config.exclude_tags:
+            included_ids: set[str] | None = None
+            excluded_ids: set[str] = set()
+
+            if self.config.include_tags:
+                included_ids = set(
+                    self.repo.tags.find_by_tags(
+                        EntityType.EXERCISE,
+                        self.config.include_tags,
+                        match_all=False,
+                    )
+                )
+            if self.config.exclude_tags:
+                excluded_ids = set(
+                    self.repo.tags.find_by_tags(
+                        EntityType.EXERCISE,
+                        self.config.exclude_tags,
+                        match_all=False,
+                    )
+                )
+
+            def _tag_ok(card: ReviewCard) -> bool:
+                eid = card.exercise_id
+                if included_ids is not None and eid not in included_ids:
+                    return False
+                return eid not in excluded_ids
+
+            due_cards = [c for c in due_cards if _tag_ok(c)]
+            new_cards = [c for c in new_cards if _tag_ok(c)]
 
         # Interleave new cards with reviews
         if self.config.interleave_new and new_cards and due_cards:
