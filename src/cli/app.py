@@ -690,7 +690,7 @@ def config_init(
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Run setup wizard"),
 ) -> None:
     """Generate a default config file at ~/.chess-trainer/config.toml."""
-    from ..config import generate_default_config, set_config_value
+    from ..config import _secure_file, generate_default_config, set_config_value
 
     if DEFAULT_CONFIG_PATH.exists():
         console.print(f"[yellow]Config already exists:[/yellow] {DEFAULT_CONFIG_PATH}")
@@ -700,6 +700,7 @@ def config_init(
 
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     DEFAULT_CONFIG_PATH.write_text(generate_default_config())
+    _secure_file(DEFAULT_CONFIG_PATH)
     console.print(f"[green]\u2713[/green] Config written to {DEFAULT_CONFIG_PATH}")
 
     if interactive:

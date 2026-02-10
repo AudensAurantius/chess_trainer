@@ -509,6 +509,24 @@ class TestFilePermissions:
         mode = path.stat().st_mode & 0o777
         assert mode == 0o600
 
+    def test_secure_file_secures_parent_directory(self, tmp_path):
+        """_secure_file also sets parent directory to 0700."""
+        subdir = tmp_path / "config_dir"
+        subdir.mkdir(mode=0o755)
+        path = subdir / "config.toml"
+        path.write_text("[web]\nport = 8080\n")
+        _secure_file(path)
+        dir_mode = subdir.stat().st_mode & 0o777
+        assert dir_mode == 0o700
+
+    def test_set_config_value_secures_parent_directory(self, tmp_path):
+        subdir = tmp_path / "config_dir"
+        subdir.mkdir(mode=0o755)
+        path = subdir / "config.toml"
+        set_config_value("web.port", "9090", config_path=path)
+        dir_mode = subdir.stat().st_mode & 0o777
+        assert dir_mode == 0o700
+
 
 class TestExperimentalConfigDefaults:
     """Tests for ExperimentalConfig dataclass defaults."""

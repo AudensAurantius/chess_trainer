@@ -395,6 +395,24 @@ class TestConfigCommands:
             result = runner.invoke(app, ["config", "init"], input="n\n")
         assert result.exit_code != 0  # Abort
 
+    def test_config_init_secures_file(self, tmp_path):
+        config_path = tmp_path / "config.toml"
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "init"])
+        assert result.exit_code == 0
+        mode = config_path.stat().st_mode & 0o777
+        assert mode == 0o600
+
+    def test_config_init_secures_parent_directory(self, tmp_path):
+        config_dir = tmp_path / "chess-trainer"
+        config_dir.mkdir(mode=0o755)
+        config_path = config_dir / "config.toml"
+        with patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path):
+            result = runner.invoke(app, ["config", "init"])
+        assert result.exit_code == 0
+        dir_mode = config_dir.stat().st_mode & 0o777
+        assert dir_mode == 0o700
+
 
 class TestTrainCommand:
     """Tests for the train command (basic scenarios only)."""

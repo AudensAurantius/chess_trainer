@@ -327,11 +327,19 @@ def _apply_env(config: AppConfig) -> None:
 
 
 def _secure_file(path: Path) -> None:
-    """Set file permissions to owner-only (0600) for secret protection."""
+    """Set file permissions to owner-only (0600) for secret protection.
+
+    Also secures the parent directory to 0700 (owner-only access).
+    Silently ignores errors on platforms without Unix permissions (Windows).
+    """
     try:
         path.chmod(0o600)
     except OSError:
         pass  # Windows or other platforms without Unix permissions
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
 
 
 def _check_permissions(path: Path) -> None:
