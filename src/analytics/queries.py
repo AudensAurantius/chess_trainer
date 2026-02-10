@@ -158,20 +158,20 @@ class AnalyticsStore:
                 )
             )
 
-        # By theme (tags)
+        # By theme (tags) — uses normalized tags table
         rows = self.conn.execute(
             """
             SELECT
-                tag AS name,
+                t.tag AS name,
                 COUNT(*) AS total_reviews,
                 SUM(CASE WHEN rh.correct THEN 1 ELSE 0 END) AS correct_count,
                 COALESCE(AVG(rc.lapses), 0) AS avg_lapses,
                 COUNT(DISTINCT e.id) AS card_count
             FROM review_history rh
             JOIN exercises e ON rh.exercise_id = e.id
-            LEFT JOIN review_cards rc ON rh.exercise_id = rc.exercise_id,
-            UNNEST(CAST(e.tags AS VARCHAR[])) AS t(tag)
-            GROUP BY tag
+            LEFT JOIN review_cards rc ON rh.exercise_id = rc.exercise_id
+            JOIN tags t ON t.entity_type = 'exercise' AND t.entity_id = e.id
+            GROUP BY t.tag
             HAVING COUNT(*) >= ?
             """,
             [min_reviews],
