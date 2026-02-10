@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import duckdb
 
 if TYPE_CHECKING:
+    from .bundle_store import BundleStore
     from .card_store import CardStore
     from .exercise_store import ExerciseStore
     from .opening_store import OpeningStore
@@ -31,6 +32,7 @@ class Repository:
         self._cards: CardStore | None = None
         self._openings: OpeningStore | None = None
         self._tags: TagStore | None = None
+        self._bundles: BundleStore | None = None
 
     @property
     def conn(self) -> duckdb.DuckDBPyConnection:
@@ -79,6 +81,15 @@ class Repository:
 
             self._tags = TagStore(self.conn)
         return self._tags
+
+    @property
+    def bundles(self) -> "BundleStore":
+        """Get bundle store."""
+        if self._bundles is None:
+            from .bundle_store import BundleStore
+
+            self._bundles = BundleStore(self.conn)
+        return self._bundles
 
     def _init_schema(self) -> None:
         """Initialize database schema."""
@@ -204,6 +215,34 @@ class Repository:
             CREATE INDEX IF NOT EXISTS idx_tags_source ON tags(source)
         """)
 
+        # Bundle tables
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS bundles (
+                id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                description VARCHAR DEFAULT '',
+                exercise_ids JSON NOT NULL,
+                auto_tags JSON DEFAULT '[]',
+                config JSON NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_bundles_name ON bundles(name)
+        """)
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS bundle_progress (
+                bundle_id VARCHAR PRIMARY KEY REFERENCES bundles(id),
+                current_cycle INTEGER NOT NULL DEFAULT 1,
+                cycle_started_at TIMESTAMP,
+                exercises_attempted INTEGER NOT NULL DEFAULT 0,
+                exercises_correct INTEGER NOT NULL DEFAULT 0,
+                completed_cycles JSON DEFAULT '[]'
+            )
+        """)
+
         # One-time migration: backfill tags from exercise JSON
         self._migrate_exercise_tags()
 
@@ -234,6 +273,7 @@ class Repository:
             self._cards = None
             self._openings = None
             self._tags = None
+            self._bundles = None
 
     def __enter__(self) -> "Repository":
         """Context manager entry."""

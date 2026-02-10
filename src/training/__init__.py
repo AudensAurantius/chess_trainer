@@ -5,9 +5,12 @@ spaced repetition training sessions.
 """
 
 from .session import SessionConfig, SessionStats, TrainingSession
+from .woodpecker import WoodpeckerSession, WoodpeckerStats
 
 __all__ = [
     "TrainingSession",
     "SessionConfig",
     "SessionStats",
+    "WoodpeckerSession",
+    "WoodpeckerStats",
 ]

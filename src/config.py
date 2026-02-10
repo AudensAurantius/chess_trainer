@@ -117,6 +117,14 @@ class ChessComConfig:
 
 
 @dataclass
+class BundlesConfig:
+    """Exercise bundle defaults."""
+
+    default_pass_threshold: float = 0.9
+    default_shuffle: bool = False
+
+
+@dataclass
 class ExperimentalConfig:
     """Experimental feature flags."""
 
@@ -143,6 +151,7 @@ class AppConfig:
     openings: OpeningsConfig = field(default_factory=OpeningsConfig)
     game_analysis: GameAnalysisConfig = field(default_factory=GameAnalysisConfig)
     tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
+    bundles: BundlesConfig = field(default_factory=BundlesConfig)
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
 
 
@@ -242,6 +251,13 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
             config.tablebase.use_lichess_fallback = bool(tb["use_lichess_fallback"])
         if "max_pieces" in tb:
             config.tablebase.max_pieces = int(tb["max_pieces"])
+
+    if "bundles" in data:
+        bu = data["bundles"]
+        if "default_pass_threshold" in bu:
+            config.bundles.default_pass_threshold = float(bu["default_pass_threshold"])
+        if "default_shuffle" in bu:
+            config.bundles.default_shuffle = bool(bu["default_shuffle"])
 
     if "experimental" in data:
         exp = data["experimental"]
@@ -445,6 +461,10 @@ skip_first_plies = 6         # Skip opening theory moves
 use_lichess_fallback = true         # Fall back to Lichess API
 max_pieces = 7                      # Max pieces for tablebase probe
 
+[bundles]
+default_pass_threshold = 0.9  # Accuracy required to pass a Woodpecker cycle
+default_shuffle = false        # Shuffle exercise order within bundles
+
 # [experimental]
 # enabled = false                  # Master kill-switch for experimental features
 # vision = false                   # Vision-based position import from screenshots
@@ -577,6 +597,7 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "logging.level": ("enum", {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}),
     "game_analysis.min_classification": ("enum", {"INACCURACY", "MISTAKE", "BLUNDER"}),
     "openings.explorer_source": ("enum", {"lichess", "masters", "player"}),
+    "bundles.default_pass_threshold": ("range", 0.0, 1.0),
     "experimental.vision_backend": ("enum", {"claude", "openai", "local"}),
 }
 

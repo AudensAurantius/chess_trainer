@@ -7,6 +7,13 @@ This module defines the core abstractions for all exercise types:
 """
 
 from .base import Exercise, ExerciseResult, ExerciseType
+from .bundle import (
+    BundleConfig,
+    BundleProgress,
+    CycleResult,
+    ExerciseBundle,
+    WoodpeckerCycle,
+)
 from .endgames import EndgameExercise
 from .openings import OpeningExercise
 from .positional import PositionalExercise
@@ -20,4 +27,9 @@ __all__ = [
     "OpeningExercise",
     "EndgameExercise",
     "PositionalExercise",
+    "ExerciseBundle",
+    "BundleConfig",
+    "WoodpeckerCycle",
+    "BundleProgress",
+    "CycleResult",
 ]
