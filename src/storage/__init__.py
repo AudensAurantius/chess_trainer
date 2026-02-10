@@ -7,10 +7,12 @@ from .card_store import CardStore
 from .exercise_store import ExerciseStore
 from .opening_store import OpeningStore
 from .repository import Repository
+from .tag_store import TagStore
 
 __all__ = [
     "Repository",
     "ExerciseStore",
     "CardStore",
     "OpeningStore",
+    "TagStore",
 ]

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .card_store import CardStore
     from .exercise_store import ExerciseStore
     from .opening_store import OpeningStore
+    from .tag_store import TagStore
 
 
 class Repository:
@@ -29,6 +30,7 @@ class Repository:
         self._exercises: ExerciseStore | None = None
         self._cards: CardStore | None = None
         self._openings: OpeningStore | None = None
+        self._tags: TagStore | None = None
 
     @property
     def conn(self) -> duckdb.DuckDBPyConnection:
@@ -68,6 +70,15 @@ class Repository:
 
             self._openings = OpeningStore(self.conn)
         return self._openings
+
+    @property
+    def tags(self) -> "TagStore":
+        """Get tag store."""
+        if self._tags is None:
+            from .tag_store import TagStore
+
+            self._tags = TagStore(self.conn)
+        return self._tags
 
     def _init_schema(self) -> None:
         """Initialize database schema."""
@@ -175,6 +186,45 @@ class Repository:
             ON review_history(exercise_id)
         """)
 
+        # Tags table for normalized tag storage
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+                entity_type VARCHAR NOT NULL,
+                entity_id VARCHAR NOT NULL,
+                tag VARCHAR NOT NULL,
+                source VARCHAR NOT NULL DEFAULT 'user',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (entity_type, entity_id, tag)
+            )
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag)
+        """)
+        self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tags_source ON tags(source)
+        """)
+
+        # One-time migration: backfill tags from exercise JSON
+        self._migrate_exercise_tags()
+
+    def _migrate_exercise_tags(self) -> None:
+        """Backfill the tags table from exercise JSON data (one-time)."""
+        tag_count = self.conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+        if tag_count > 0:
+            return  # Already populated
+
+        exercise_count = self.conn.execute("SELECT COUNT(*) FROM exercises").fetchone()[0]
+        if exercise_count == 0:
+            return  # Nothing to migrate
+
+        self.conn.execute("""
+            INSERT INTO tags (entity_type, entity_id, tag, source, created_at)
+            SELECT 'exercise', e.id, LOWER(TRIM(t.tag)), 'system', CURRENT_TIMESTAMP
+            FROM exercises e, UNNEST(CAST(e.tags AS VARCHAR[])) AS t(tag)
+            WHERE e.tags IS NOT NULL AND CAST(e.tags AS VARCHAR) != '[]'
+            ON CONFLICT DO NOTHING
+        """)
+
     def close(self) -> None:
         """Close database connection."""
         if self._conn:
@@ -183,6 +233,7 @@ class Repository:
             self._exercises = None
             self._cards = None
             self._openings = None
+            self._tags = None
 
     def __enter__(self) -> "Repository":
         """Context manager entry."""
