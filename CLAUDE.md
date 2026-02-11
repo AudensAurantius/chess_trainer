@@ -102,4 +102,9 @@ Web deps: `httpx` needed for FastAPI TestClient (in dev deps).
 
 Active roadmap: `memory/roadmap-v3.md` in the Claude memory directory.
 
-Next items: F16 (import failed puzzles), F17 (training hooks), then cross-cutting enhancements (E1-E15).
+Next items: F16 (import failed puzzles), F17 (training hooks), then enhancements (E1-E18).
+
+E16-E18 were added from a TODO review (2026-02-09):
+- E16: Strict type safety for HTTP/API layer (resolve `get_lichess()` return type union)
+- E17: Serialization cleanup with dataclasses-json (config + card boilerplate)
+- E18: Database schema migration tracking (version table + sequential migrations)
