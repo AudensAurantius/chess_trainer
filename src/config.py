@@ -138,6 +138,14 @@ class ExperimentalConfig:
 
 
 @dataclass
+class ImportConfig:
+    """Content import settings."""
+
+    failed_puzzle_default_horizon: str = "3 months"
+    failed_puzzle_auto_tag: bool = True
+
+
+@dataclass
 class AuthConfig:
     """User authentication settings."""
 
@@ -163,6 +171,7 @@ class AppConfig:
     game_analysis: GameAnalysisConfig = field(default_factory=GameAnalysisConfig)
     tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
     bundles: BundlesConfig = field(default_factory=BundlesConfig)
+    import_settings: ImportConfig = field(default_factory=ImportConfig)
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
 
@@ -272,6 +281,15 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
             config.bundles.default_pass_threshold = float(bu["default_pass_threshold"])
         if "default_shuffle" in bu:
             config.bundles.default_shuffle = bool(bu["default_shuffle"])
+
+    if "import_settings" in data:
+        imp = data["import_settings"]
+        if "failed_puzzle_default_horizon" in imp:
+            config.import_settings.failed_puzzle_default_horizon = imp[
+                "failed_puzzle_default_horizon"
+            ]
+        if "failed_puzzle_auto_tag" in imp:
+            config.import_settings.failed_puzzle_auto_tag = bool(imp["failed_puzzle_auto_tag"])
 
     if "experimental" in data:
         exp = data["experimental"]
@@ -497,6 +515,10 @@ max_pieces = 7                      # Max pieces for tablebase probe
 [bundles]
 default_pass_threshold = 0.9  # Accuracy required to pass a Woodpecker cycle
 default_shuffle = false        # Shuffle exercise order within bundles
+
+[import_settings]
+failed_puzzle_default_horizon = "3 months"  # Default time horizon for failed puzzle import
+failed_puzzle_auto_tag = true               # Auto-tag imported failed puzzles
 
 # [experimental]
 # enabled = false                  # Master kill-switch for experimental features
