@@ -237,3 +237,17 @@ class TestStatsAPI:
         assert res.status_code == 200
         data = res.json()
         assert "areas" in data
+
+
+class TestErrorHandlers:
+    def test_404_html_page(self, client):
+        res = client.get("/nonexistent-page")
+        assert res.status_code == 404
+        assert "not found" in res.text.lower()
+        assert "dashboard" in res.text.lower()
+
+    def test_404_api_json(self, client):
+        res = client.get("/api/nonexistent")
+        assert res.status_code == 404
+        data = res.json()
+        assert "error" in data
