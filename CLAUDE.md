@@ -74,7 +74,8 @@ src/
 
 - **Style:** Google docstrings, type hints on all functions, `ruff` for lint+format
 - **Line length:** 100 chars (`pyproject.toml [tool.ruff]`)
-- **Commits:** Conventional Commits (`feat/fix/docs/test/refactor`), include `Co-Authored-By` trailer
+- **Commits:** Conventional Commits (`feat/fix/docs/test/refactor`), include `Co-Authored-By` trailer. **Commits must be modular** — one logical unit per commit. For multi-step features, commit each layer separately (e.g., models, then store, then service, then config, then routes, then tests, then docs). Each commit should compile and pass tests independently. Never squash an entire feature into a single commit.
+- **Branching:** Create a feature branch off `claude/implement-from-notes` for each roadmap item or significant feature (e.g., `claude/b1-user-auth`, `claude/b2-multi-tenant`). Develop and commit incrementally on the feature branch. Merge back to `claude/implement-from-notes` when complete and validated. This keeps the primary branch clean and makes features reviewable as a series of commits.
 - **Testing:** All new functionality must have thorough unit tests. Write integration tests for cross-module interactions (e.g., storage ↔ domain, web ↔ storage). Run full test suite before commits. Verify no regressions in test count.
 - **Quality:** `ruff check --fix` before every commit. The pre-commit hook enforces this.
 - **Imports:** Use `from __future__ import annotations` + `TYPE_CHECKING` to avoid circular imports
