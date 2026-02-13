@@ -230,19 +230,22 @@ def get_game(game_id: str) -> JsonObject:
 
 
 # TODO: Fix return type error
-def get_puzzle_history(limit: int = 100) -> Iterator[JsonObject]:
+def get_puzzle_history(limit: int = 100, before: int | None = None) -> Iterator[JsonObject]:
     """Fetch the authenticated user's puzzle history.
 
     Args:
         limit: Maximum number of puzzles to retrieve.
+        before: Unix timestamp in milliseconds. Only return activity before
+            this time. Defaults to now. Useful for pagination or date filtering.
 
     Yields:
-        Puzzle activity JSON objects.
+        Puzzle activity JSON objects with ``date``, ``win``, and ``puzzle`` fields.
     """
-    logger.info("Getting puzzle history, limit %s puzzles", limit)
-    yield from get_lichess(
-        "puzzle/activity", query_params={"max": str(limit)}, stream=True, auth=True
-    )
+    logger.info("Getting puzzle history, limit %s puzzles, before %s", limit, before)
+    params: dict[str, str] = {"max": str(limit)}
+    if before is not None:
+        params["before"] = str(before)
+    yield from get_lichess("puzzle/activity", query_params=params, stream=True, auth=True)
 
 
 # TODO: Fix return type error
