@@ -52,5 +52,79 @@
         </table>
     </div>
     {% endif %}
+
+    <div id="analytics-streaks" class="analytics-section">
+        <h2>Streaks</h2>
+        <div id="streaks-grid" class="stats-grid">
+            <div class="stat-card"><div class="stat-value dim">—</div><div class="stat-label">Loading...</div></div>
+        </div>
+    </div>
+
+    <div id="analytics-weak-areas" class="analytics-section">
+        <h2>Weak Areas</h2>
+        <div id="weak-areas-content">
+            <p class="dim">Loading...</p>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function loadAnalytics() {
+    // Streaks
+    try {
+        const res = await fetch('/api/analytics/streaks');
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('streaks-grid').innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-value">${data.current_streak}</div>
+                    <div class="stat-label">Current Streak</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${data.longest_streak}</div>
+                    <div class="stat-label">Longest Streak</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${data.total_active_days}</div>
+                    <div class="stat-label">Active Days</div>
+                </div>
+            `;
+        }
+    } catch (e) { /* silently ignore */ }
+
+    // Weak areas
+    try {
+        const res = await fetch('/api/analytics/weak-areas');
+        if (res.ok) {
+            const data = await res.json();
+            const areas = data.areas || [];
+            if (areas.length === 0) {
+                document.getElementById('weak-areas-content').innerHTML =
+                    '<p class="dim">No data yet. Complete some reviews first.</p>';
+                return;
+            }
+            let html = '<table class="data-table"><thead><tr>' +
+                '<th>Theme</th><th>Reviews</th><th>Accuracy</th>' +
+                '</tr></thead><tbody>';
+            for (const a of areas) {
+                const pct = (a.accuracy * 100).toFixed(1);
+                html += `<tr>
+                    <td>${a.name}</td>
+                    <td>${a.total_reviews}</td>
+                    <td>
+                        <div class="accuracy-bar-track">
+                            <div class="accuracy-bar-fill" style="width: ${pct}%"></div>
+                        </div>
+                        <span class="dim">${pct}%</span>
+                    </td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('weak-areas-content').innerHTML = html;
+        }
+    } catch (e) { /* silently ignore */ }
+})();
+</script>
 {% endblock %}

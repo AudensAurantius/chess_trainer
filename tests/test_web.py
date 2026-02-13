@@ -217,3 +217,23 @@ class TestStatsAPI:
         assert res.status_code == 200
         data = res.json()
         assert "exercise_count" in data
+
+    def test_stats_page_has_analytics_containers(self, client):
+        """Stats page should include analytics section divs."""
+        res = client.get("/stats")
+        assert 'id="analytics-streaks"' in res.text
+        assert 'id="analytics-weak-areas"' in res.text
+
+    def test_streaks_api_returns_200(self, client):
+        res = client.get("/api/analytics/streaks")
+        assert res.status_code == 200
+        data = res.json()
+        assert "current_streak" in data
+        assert "longest_streak" in data
+        assert "total_active_days" in data
+
+    def test_weak_areas_api_returns_200(self, client):
+        res = client.get("/api/analytics/weak-areas")
+        assert res.status_code == 200
+        data = res.json()
+        assert "areas" in data
