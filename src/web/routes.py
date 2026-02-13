@@ -49,7 +49,30 @@ async def stats_page(request: Request):
     )
 
 
+@router.get("/import", response_class=HTMLResponse)
+async def import_page(request: Request):
+    """Render the import page."""
+    return _templates(request).TemplateResponse(request, "import.html", {"user": _user(request)})
+
+
 # --- API endpoints ---
+
+
+@router.post("/api/import/lichess")
+async def api_import_lichess(request: Request):
+    """Import puzzles from Lichess."""
+    manager = _manager(request)
+    body = await request.json()
+    count = min(int(body.get("count", 20)), 100)
+    difficulty = body.get("difficulty") or None
+    themes = body.get("themes") or None
+
+    try:
+        result = manager.import_lichess_puzzles(count=count, difficulty=difficulty, themes=themes)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
 
 
 @router.post("/api/session/start")

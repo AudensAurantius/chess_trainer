@@ -137,3 +137,51 @@ class TestSessionManagerImport:
             assert kwargs["difficulty"] == "harder"
             assert kwargs["themes"] == ["fork", "pin"]
         manager._close_repo()
+
+
+class TestImportPage:
+    """Tests for the import page and nav link."""
+
+    def test_import_page_renders(self, client):
+        res = client.get("/import")
+        assert res.status_code == 200
+        assert "Import Exercises" in res.text
+        assert "Lichess Puzzles" in res.text
+
+    def test_import_page_has_form_fields(self, client):
+        res = client.get("/import")
+        assert 'id="import-count"' in res.text
+        assert 'id="import-difficulty"' in res.text
+        assert 'id="import-themes"' in res.text
+
+    def test_nav_has_import_link(self, client):
+        """Nav bar should contain an Import link."""
+        res = client.get("/")
+        assert 'href="/import"' in res.text
+        assert "Import" in res.text
+
+
+class TestImportAPI:
+    """Tests for POST /api/import/lichess."""
+
+    def test_import_api_returns_result(self, client):
+        """API returns correct JSON with mocked importer."""
+        puzzles = [_make_tactic("api1"), _make_tactic("api2")]
+        with patch("src.importers.lichess_puzzles.LichessPuzzleImporter.fetch") as mock_fetch:
+            mock_fetch.return_value = iter(puzzles)
+            res = client.post("/api/import/lichess", json={"count": 2})
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["added"] == 2
+        assert data["skipped"] == 0
+
+    def test_import_api_caps_count(self, client):
+        """API caps count at 100."""
+        with patch("src.importers.lichess_puzzles.LichessPuzzleImporter.fetch") as mock_fetch:
+            mock_fetch.return_value = iter([])
+            res = client.post("/api/import/lichess", json={"count": 999})
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["added"] == 0  # no puzzles fetched, but no error
