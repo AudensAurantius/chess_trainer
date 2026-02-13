@@ -146,6 +146,19 @@ class ImportConfig:
 
 
 @dataclass
+class DifficultyConfig:
+    """Automatic difficulty adaptation settings."""
+
+    enabled: bool = False
+    window: int = 20  # Recent reviews to consider
+    min_reviews: int = 5  # Min reviews before adapting
+    promote_accuracy: float = 0.80  # Accuracy threshold to increase difficulty
+    demote_accuracy: float = 0.45  # Accuracy threshold to decrease difficulty
+    step: int = 150  # Rating shift on promote/demote
+    difficulty_range: int = 600  # Width of difficulty window
+
+
+@dataclass
 class AuthConfig:
     """User authentication settings."""
 
@@ -174,6 +187,7 @@ class AppConfig:
     import_settings: ImportConfig = field(default_factory=ImportConfig)
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    difficulty: DifficultyConfig = field(default_factory=DifficultyConfig)
 
 
 # TODO: Consider simplifying using dataclasses-json or similar
@@ -317,6 +331,23 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "require_invite" in au:
             config.auth.require_invite = bool(au["require_invite"])
 
+    if "difficulty" in data:
+        diff = data["difficulty"]
+        if "enabled" in diff:
+            config.difficulty.enabled = bool(diff["enabled"])
+        if "window" in diff:
+            config.difficulty.window = int(diff["window"])
+        if "min_reviews" in diff:
+            config.difficulty.min_reviews = int(diff["min_reviews"])
+        if "promote_accuracy" in diff:
+            config.difficulty.promote_accuracy = float(diff["promote_accuracy"])
+        if "demote_accuracy" in diff:
+            config.difficulty.demote_accuracy = float(diff["demote_accuracy"])
+        if "step" in diff:
+            config.difficulty.step = int(diff["step"])
+        if "difficulty_range" in diff:
+            config.difficulty.difficulty_range = int(diff["difficulty_range"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -384,6 +415,14 @@ def _apply_env(config: AppConfig) -> None:
         ),
         f"{ENV_PREFIX}AUTH_REQUIRE_INVITE": lambda v: setattr(
             config.auth, "require_invite", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}DIFFICULTY_ENABLED": lambda v: setattr(
+            config.difficulty, "enabled", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}DIFFICULTY_WINDOW": lambda v: setattr(config.difficulty, "window", int(v)),
+        f"{ENV_PREFIX}DIFFICULTY_STEP": lambda v: setattr(config.difficulty, "step", int(v)),
+        f"{ENV_PREFIX}DIFFICULTY_RANGE": lambda v: setattr(
+            config.difficulty, "difficulty_range", int(v)
         ),
     }
     for key, setter in env_map.items():
@@ -533,6 +572,15 @@ failed_puzzle_auto_tag = true               # Auto-tag imported failed puzzles
 # database_path = "~/.chess-trainer/auth.db"
 # session_expiry_hours = 720       # 30 days
 # require_invite = true            # Require invite code for registration
+
+# [difficulty]
+# enabled = false                  # Enable automatic difficulty adaptation
+# window = 20                      # Recent reviews to consider
+# min_reviews = 5                  # Min reviews before adapting
+# promote_accuracy = 0.8           # Accuracy to increase difficulty
+# demote_accuracy = 0.45           # Accuracy to decrease difficulty
+# step = 150                       # Rating shift on promote/demote
+# difficulty_range = 600           # Width of difficulty window
 """
 
 
@@ -661,6 +709,12 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "bundles.default_pass_threshold": ("range", 0.0, 1.0),
     "experimental.vision_backend": ("enum", {"claude", "openai", "local"}),
     "auth.session_expiry_hours": ("range", 1, 87600),
+    "difficulty.window": ("range", 1, 1000),
+    "difficulty.min_reviews": ("range", 1, 1000),
+    "difficulty.promote_accuracy": ("range", 0.0, 1.0),
+    "difficulty.demote_accuracy": ("range", 0.0, 1.0),
+    "difficulty.step": ("range", 1, 1000),
+    "difficulty.difficulty_range": ("range", 50, 3000),
 }
 
 
