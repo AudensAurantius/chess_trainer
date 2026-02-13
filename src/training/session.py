@@ -31,6 +31,10 @@ class SessionConfig:
     include_tags: list[str] | None = None
     exclude_tags: list[str] | None = None
 
+    # Difficulty range (None = no filtering)
+    min_difficulty: float | None = None
+    max_difficulty: float | None = None
+
     # FSRS parameters (None = use defaults)
     fsrs_params: FSRSParameters | None = None
 
@@ -150,6 +154,11 @@ class TrainingSession:
             due_cards = [c for c in due_cards if _tag_ok(c)]
             new_cards = [c for c in new_cards if _tag_ok(c)]
 
+        # Filter by difficulty range if specified
+        if self.config.min_difficulty is not None or self.config.max_difficulty is not None:
+            due_cards = [c for c in due_cards if self._difficulty_ok(c.exercise_id)]
+            new_cards = [c for c in new_cards if self._difficulty_ok(c.exercise_id)]
+
         # Interleave new cards with reviews
         if self.config.interleave_new and new_cards and due_cards:
             # Insert new cards at regular intervals
@@ -173,6 +182,21 @@ class TrainingSession:
         """Get the exercise type for filtering."""
         exercise = self.repo.exercises.get(exercise_id)
         return exercise.exercise_type.name if exercise else None
+
+    def _difficulty_ok(self, exercise_id: str) -> bool:
+        """Check if an exercise's difficulty falls within the configured range.
+
+        Exercises with no difficulty rating always pass through.
+        """
+        exercise = self.repo.exercises.get(exercise_id)
+        if not exercise or exercise.difficulty is None:
+            return True
+        d = exercise.difficulty
+        if self.config.min_difficulty is not None and d < self.config.min_difficulty:
+            return False
+        if self.config.max_difficulty is not None and d > self.config.max_difficulty:
+            return False
+        return True
 
     @property
     def remaining(self) -> int:
