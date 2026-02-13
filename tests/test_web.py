@@ -239,6 +239,150 @@ class TestStatsAPI:
         assert "areas" in data
 
 
+class TestAcceptableFirstMoves:
+    """Tests for acceptable first moves and game context in web training flow."""
+
+    # Open position: Black queen on d4, kings on e8/e1.
+    # Solution: Qd1+ Kf2 Qd2+ (3 moves, 2 user moves).
+    OWN_GAME_FEN = "4k3/8/8/8/3q4/8/8/4K3 b - - 0 1"
+
+    @pytest.fixture
+    def own_game_client(self, tmp_path):
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        config.own_game_eval.show_game_context = True
+        app = create_app(config)
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="game:chesscom:123:m8",
+                fen=self.OWN_GAME_FEN,
+                tags=["own_game", "tactic"],
+                source="chesscom",
+                difficulty=1200.0,
+                solution=["d4d1", "e1f2", "d1d2"],
+                themes=["own_game"],
+                acceptable_first_moves=["d4e3"],
+                best_move_eval=50,
+                evaluate_depth=1,
+                metadata={
+                    "game_context": {
+                        "game_date": "2026-02-09",
+                        "opponent": "magnus42",
+                        "time_control": "blitz",
+                        "player_color": "black",
+                    }
+                },
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+        return TestClient(app)
+
+    def test_acceptable_first_move_accepted(self, own_game_client):
+        """An acceptable (near-optimal) first move should be treated as correct."""
+        own_game_client.post("/api/session/start", json={})
+        own_game_client.get("/api/session/next")
+
+        # d4e3 is in acceptable_first_moves, not the exact solution (d4d1)
+        res = own_game_client.post("/api/session/move", json={"move": "d4e3"})
+        data = res.json()
+        assert data["valid"] is True
+        assert data["correct"] is True
+        # With evaluate_depth=1, this is also finished after the first move
+        assert data["finished"] is True
+
+    def test_exact_solution_still_works(self, own_game_client):
+        """The exact solution move should still be accepted."""
+        own_game_client.post("/api/session/start", json={})
+        own_game_client.get("/api/session/next")
+
+        res = own_game_client.post("/api/session/move", json={"move": "d4d1"})
+        data = res.json()
+        assert data["valid"] is True
+        assert data["correct"] is True
+        assert data["finished"] is True
+
+    def test_unacceptable_move_rejected(self, own_game_client):
+        """A move not in solution or acceptable list should be incorrect."""
+        own_game_client.post("/api/session/start", json={})
+        own_game_client.get("/api/session/next")
+
+        # d4a4 is legal but not in solution or acceptable list
+        res = own_game_client.post("/api/session/move", json={"move": "d4a4"})
+        data = res.json()
+        assert data["valid"] is True
+        assert data["correct"] is False
+        assert data["finished"] is True
+
+    def test_game_context_in_next_response(self, own_game_client):
+        """Game context should appear in /api/session/next when config enables it."""
+        own_game_client.post("/api/session/start", json={})
+        res = own_game_client.get("/api/session/next")
+        data = res.json()
+
+        assert "game_context" in data
+        ctx = data["game_context"]
+        assert ctx["opponent"] == "magnus42"
+        assert ctx["time_control"] == "blitz"
+        assert ctx["player_color"] == "black"
+        assert ctx["game_date"] == "2026-02-09"
+
+    def test_game_context_hidden_when_config_disabled(self, tmp_path):
+        """Game context should not appear when show_game_context is False."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        config.own_game_eval.show_game_context = False
+        app = create_app(config)
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="game:test:1:m1",
+                fen=self.OWN_GAME_FEN,
+                tags=["own_game"],
+                source="test",
+                difficulty=1200.0,
+                solution=["d4d1"],
+                themes=[],
+                metadata={"game_context": {"opponent": "someone"}},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+        client = TestClient(app)
+        client.post("/api/session/start", json={})
+        res = client.get("/api/session/next")
+        data = res.json()
+        assert "game_context" not in data
+
+    def test_evaluate_depth_limits_required_moves(self, own_game_client):
+        """With evaluate_depth=1, only the first user move matters."""
+        own_game_client.post("/api/session/start", json={})
+        own_game_client.get("/api/session/next")
+
+        # The solution has 3 moves (2 user moves), but evaluate_depth=1
+        # means only the first user move is checked
+        res = own_game_client.post("/api/session/move", json={"move": "d4d1"})
+        data = res.json()
+        assert data["finished"] is True  # Done after 1 user move
+
+    def test_no_game_context_when_absent(self, seeded_client):
+        """Regular exercises without game_context should not include it."""
+        seeded_client.post("/api/session/start", json={})
+        res = seeded_client.get("/api/session/next")
+        data = res.json()
+        assert "game_context" not in data
+
+
+class TestGameContextUI:
+    def test_train_template_has_game_context_div(self, client):
+        """The training template should include a game-context div."""
+        res = client.get("/train")
+        assert 'id="game-context"' in res.text
+
+    def test_training_js_has_format_game_context(self, client):
+        """training.js should include the formatGameContext helper."""
+        res = client.get("/static/js/training.js")
+        assert "formatGameContext" in res.text
+        assert "game_context" in res.text
+
+
 class TestErrorHandlers:
     def test_404_html_page(self, client):
         res = client.get("/nonexistent-page")

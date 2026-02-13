@@ -113,18 +113,25 @@ async def api_session_next(request: Request):
                 },
             }
         )
-    return JSONResponse(
-        {
-            "status": "ok",
-            "fen": state.fen,
-            "side_to_move": state.side_to_move,
-            "challenge": state.challenge,
-            "remaining": manager.remaining,
-            "exercise_num": manager.stats.exercises_shown if manager.stats else 1,
-            "tags": state.exercise.tags[:3],
-            "difficulty": state.exercise.difficulty,
-        }
-    )
+    response = {
+        "status": "ok",
+        "fen": state.fen,
+        "side_to_move": state.side_to_move,
+        "challenge": state.challenge,
+        "remaining": manager.remaining,
+        "exercise_num": manager.stats.exercises_shown if manager.stats else 1,
+        "tags": state.exercise.tags[:3],
+        "difficulty": state.exercise.difficulty,
+    }
+
+    # Include game context for own-game exercises (if enabled in config)
+    config = request.app.state.config
+    if config.own_game_eval.show_game_context:
+        game_context = state.exercise.metadata.get("game_context")
+        if game_context:
+            response["game_context"] = game_context
+
+    return JSONResponse(response)
 
 
 @router.post("/api/session/move")

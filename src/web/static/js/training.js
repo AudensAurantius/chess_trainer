@@ -93,6 +93,15 @@ async function loadNextExercise() {
             data.remaining + ' remaining';
         document.getElementById('challenge-text').textContent = data.challenge;
 
+        // Display game context if available (own-game exercises)
+        const contextEl = document.getElementById('game-context');
+        if (data.game_context) {
+            contextEl.textContent = formatGameContext(data.game_context);
+            contextEl.style.display = 'block';
+        } else {
+            contextEl.style.display = 'none';
+        }
+
         // Determine player color from side to move
         playerColor = data.side_to_move === 'White' ? 'white' : 'black';
 
@@ -354,4 +363,21 @@ function showStartFeedback(message, type) {
     el.innerHTML = message;
     el.className = 'feedback feedback-' + type;
     el.style.display = 'block';
+}
+
+function formatGameContext(ctx) {
+    const parts = [];
+    if (ctx.player_color) {
+        parts.push('You played as ' + ctx.player_color.charAt(0).toUpperCase() + ctx.player_color.slice(1));
+    }
+    if (ctx.opponent) {
+        parts.push('vs ' + ctx.opponent);
+    }
+    if (ctx.time_control) {
+        parts.push('(' + ctx.time_control + ')');
+    }
+    if (ctx.game_date) {
+        parts.push(ctx.game_date);
+    }
+    return parts.join(' ');
 }

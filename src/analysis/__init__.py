@@ -8,6 +8,7 @@ from .mistakes import (
     GameAnalysis,
     LichessServerAnalyzer,
     MistakeDetector,
+    MultiPVAnalyzer,
     PositionAnalyzer,
     PositionEval,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "MistakeDetector",
     "MoveClassification",
     "MoveEvaluation",
+    "MultiPVAnalyzer",
     "PositionAnalyzer",
     "PositionEval",
     "classify_move",

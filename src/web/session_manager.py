@@ -199,7 +199,20 @@ class SessionManager:
         state.board.push(move)
 
         is_correct_move = move == expected_move
-        is_last_user_move = user_step == len(user_move_indices) - 1
+
+        # For own-game exercises: accept near-optimal first moves
+        from ..exercises.tactics import TacticExercise
+
+        if not is_correct_move and user_step == 0:
+            ex = state.exercise
+            if isinstance(ex, TacticExercise) and move_uci in ex.acceptable_first_moves:
+                is_correct_move = True
+
+        # Determine effective number of user moves to check
+        effective_user_moves = len(user_move_indices)
+        if isinstance(state.exercise, TacticExercise) and state.exercise.evaluate_depth is not None:
+            effective_user_moves = min(effective_user_moves, state.exercise.evaluate_depth)
+        is_last_user_move = user_step == effective_user_moves - 1
 
         if not is_correct_move:
             # Wrong move — exercise is done
@@ -239,7 +252,7 @@ class SessionManager:
         if is_last_user_move:
             # All moves correct — build full user_moves for submit
             state.submitted = True
-            user_moves = [solution[i] for i in user_move_indices]
+            user_moves = [solution[i] for i in user_move_indices[:effective_user_moves]]
             result, _ = self._session.submit(user_moves, 0)
             return {
                 "valid": True,
