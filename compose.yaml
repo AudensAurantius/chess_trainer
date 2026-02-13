@@ -1,0 +1,32 @@
+# Chess Trainer deployment stack
+# Works with both `podman compose` and `docker compose`
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile
+    restart: unless-stopped
+    volumes:
+      - chess-data:/data
+    env_file:
+      - deploy/.env
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  chess-data:
+  caddy-data:
+  caddy-config:
