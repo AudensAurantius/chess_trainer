@@ -25,6 +25,7 @@ class DatabaseConfig:
     """Database connection settings."""
 
     path: str = str(DEFAULT_CONFIG_DIR / "trainer.db")
+    data_dir: str = str(DEFAULT_CONFIG_DIR / "data")
 
 
 @dataclass
@@ -174,6 +175,8 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         db = data["database"]
         if "path" in db:
             config.database.path = str(Path(db["path"]).expanduser())
+        if "data_dir" in db:
+            config.database.data_dir = str(Path(db["data_dir"]).expanduser())
 
     if "lichess" in data:
         li = data["lichess"]
@@ -301,6 +304,7 @@ def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
     env_map = {
         f"{ENV_PREFIX}DB_PATH": lambda v: setattr(config.database, "path", v),
+        f"{ENV_PREFIX}DATA_DIR": lambda v: setattr(config.database, "data_dir", v),
         f"{ENV_PREFIX}LICHESS_API_URL": lambda v: setattr(config.lichess, "api_url", v),
         f"{ENV_PREFIX}LICHESS_TOKEN": lambda v: setattr(config.lichess, "token", v),
         "LICHESS_TOKEN": lambda v: setattr(config.lichess, "token", v),
@@ -439,6 +443,7 @@ def generate_default_config() -> str:
 
 [database]
 path = "~/.chess-trainer/trainer.db"
+# data_dir = "~/.chess-trainer/data"  # Per-user databases (multi-tenant)
 
 [lichess]
 api_url = "https://lichess.org/api"
@@ -711,9 +716,12 @@ def set_config_value(key: str, raw_value: str, config_path: Path | None = None) 
     _validate_value(key, value)
 
     # Path expansion
-    if key in ("database.path", "tablebase.syzygy_path", "auth.database_path") and isinstance(
-        value, str
-    ):
+    if key in (
+        "database.path",
+        "database.data_dir",
+        "tablebase.syzygy_path",
+        "auth.database_path",
+    ) and isinstance(value, str):
         value = str(Path(value).expanduser())
 
     # Read existing TOML
