@@ -83,8 +83,12 @@ async def api_session_start(request: Request):
     max_new = body.get("max_new")
     max_reviews = body.get("max_reviews")
     include_tags = body.get("include_tags") or None
+    adapt_difficulty = body.get("adapt_difficulty")
     count = manager.start_session(
-        max_new=max_new, max_reviews=max_reviews, include_tags=include_tags
+        max_new=max_new,
+        max_reviews=max_reviews,
+        include_tags=include_tags,
+        adapt_difficulty=adapt_difficulty,
     )
     return JSONResponse({"status": "started", "queue_size": count})
 
