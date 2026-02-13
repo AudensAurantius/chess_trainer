@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+
+# Virtual environments
+.venv/
+
+# Tests and development
+tests/
+.ruff_cache/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# DuckDB files (runtime data, not shipped in image)
+*.duckdb
+*.duckdb.wal
+data/
+
+# Claude / memory
+.claude/
+memory/
+
+# Deployment config (runtime, not build-time)
+deploy/.env
+
+# IDE / editor
+*.swp
+.direnv
+.idea/
+.vscode/
+
+# Documentation (not needed in image)
+*.md
+!src/**/*.md
+DECISION_LOG.md
+LICENSE
