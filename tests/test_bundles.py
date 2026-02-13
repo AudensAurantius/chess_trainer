@@ -905,6 +905,7 @@ class TestBundlesConfig:
 
         config_path = tmp_path / "config.toml"
         config_path.write_text("[bundles]\ndefault_pass_threshold = 0.75\ndefault_shuffle = true\n")
+        config_path.chmod(0o600)
         config = load_config(config_path)
         assert config.bundles.default_pass_threshold == 0.75
         assert config.bundles.default_shuffle is True

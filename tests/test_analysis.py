@@ -574,6 +574,7 @@ class TestEngineConfig:
             '[engine]\npath = "/opt/stockfish"\nhash_mb = 512\n'
             "threads = 8\ndefault_depth = 30\ndefault_multipv = 5\n"
         )
+        config_file.chmod(0o600)
         cfg = load_config(config_file)
         assert cfg.engine.path == "/opt/stockfish"
         assert cfg.engine.hash_mb == 512
