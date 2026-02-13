@@ -159,6 +159,16 @@ class DifficultyConfig:
 
 
 @dataclass
+class OwnGameEvalConfig:
+    """Own-game exercise evaluation settings."""
+
+    cp_tolerance: int = 50  # Centipawns within best move to accept
+    multipv_count: int = 3  # Multi-PV lines to compute at import time
+    evaluate_depth: int = 1  # User moves to evaluate (1 = first move only)
+    show_game_context: bool = True  # Display game date/opponent/time control
+
+
+@dataclass
 class AuthConfig:
     """User authentication settings."""
 
@@ -188,6 +198,7 @@ class AppConfig:
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     difficulty: DifficultyConfig = field(default_factory=DifficultyConfig)
+    own_game_eval: OwnGameEvalConfig = field(default_factory=OwnGameEvalConfig)
 
 
 # TODO: Consider simplifying using dataclasses-json or similar
@@ -348,6 +359,17 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "difficulty_range" in diff:
             config.difficulty.difficulty_range = int(diff["difficulty_range"])
 
+    if "own_game_eval" in data:
+        oge = data["own_game_eval"]
+        if "cp_tolerance" in oge:
+            config.own_game_eval.cp_tolerance = int(oge["cp_tolerance"])
+        if "multipv_count" in oge:
+            config.own_game_eval.multipv_count = int(oge["multipv_count"])
+        if "evaluate_depth" in oge:
+            config.own_game_eval.evaluate_depth = int(oge["evaluate_depth"])
+        if "show_game_context" in oge:
+            config.own_game_eval.show_game_context = bool(oge["show_game_context"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -423,6 +445,18 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}DIFFICULTY_STEP": lambda v: setattr(config.difficulty, "step", int(v)),
         f"{ENV_PREFIX}DIFFICULTY_RANGE": lambda v: setattr(
             config.difficulty, "difficulty_range", int(v)
+        ),
+        f"{ENV_PREFIX}OWN_GAME_CP_TOLERANCE": lambda v: setattr(
+            config.own_game_eval, "cp_tolerance", int(v)
+        ),
+        f"{ENV_PREFIX}OWN_GAME_MULTIPV": lambda v: setattr(
+            config.own_game_eval, "multipv_count", int(v)
+        ),
+        f"{ENV_PREFIX}OWN_GAME_EVAL_DEPTH": lambda v: setattr(
+            config.own_game_eval, "evaluate_depth", int(v)
+        ),
+        f"{ENV_PREFIX}OWN_GAME_SHOW_CONTEXT": lambda v: setattr(
+            config.own_game_eval, "show_game_context", v.lower() in ("true", "1", "yes")
         ),
     }
     for key, setter in env_map.items():
@@ -581,6 +615,12 @@ failed_puzzle_auto_tag = true               # Auto-tag imported failed puzzles
 # demote_accuracy = 0.45           # Accuracy to decrease difficulty
 # step = 150                       # Rating shift on promote/demote
 # difficulty_range = 600           # Width of difficulty window
+
+# [own_game_eval]
+# cp_tolerance = 50                # Centipawns within best move to accept
+# multipv_count = 3                # Multi-PV lines at import time
+# evaluate_depth = 1               # User moves to evaluate (1 = first move only)
+# show_game_context = true         # Show game date, opponent, time control
 """
 
 
@@ -715,6 +755,9 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "difficulty.demote_accuracy": ("range", 0.0, 1.0),
     "difficulty.step": ("range", 1, 1000),
     "difficulty.difficulty_range": ("range", 50, 3000),
+    "own_game_eval.cp_tolerance": ("range", 0, 500),
+    "own_game_eval.multipv_count": ("range", 1, 10),
+    "own_game_eval.evaluate_depth": ("range", 1, 20),
 }
 
 

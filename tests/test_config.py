@@ -7,6 +7,7 @@ import pytest
 from src.config import (
     AppConfig,
     ExperimentalConfig,
+    OwnGameEvalConfig,
     _apply_env,
     _apply_toml,
     _check_permissions,
@@ -741,3 +742,147 @@ class TestExperimentalDefaultConfig:
         assert "# [experimental]" in content
         assert "# enabled = false" in content
         assert '# vision_backend = "claude"' in content
+
+
+# ── OwnGameEvalConfig tests ──────────────────────────────────────────────────
+
+
+class TestOwnGameEvalConfigDefaults:
+    """Tests for OwnGameEvalConfig dataclass defaults."""
+
+    def test_defaults(self):
+        cfg = OwnGameEvalConfig()
+        assert cfg.cp_tolerance == 50
+        assert cfg.multipv_count == 3
+        assert cfg.evaluate_depth == 1
+        assert cfg.show_game_context is True
+
+    def test_app_config_has_own_game_eval(self):
+        cfg = AppConfig()
+        assert hasattr(cfg, "own_game_eval")
+        assert isinstance(cfg.own_game_eval, OwnGameEvalConfig)
+        assert cfg.own_game_eval.cp_tolerance == 50
+
+
+class TestOwnGameEvalApplyToml:
+    """Tests for TOML overlay of [own_game_eval] section."""
+
+    def test_apply_all_fields(self):
+        cfg = AppConfig()
+        data = {
+            "own_game_eval": {
+                "cp_tolerance": 75,
+                "multipv_count": 5,
+                "evaluate_depth": 3,
+                "show_game_context": False,
+            }
+        }
+        _apply_toml(cfg, data)
+        assert cfg.own_game_eval.cp_tolerance == 75
+        assert cfg.own_game_eval.multipv_count == 5
+        assert cfg.own_game_eval.evaluate_depth == 3
+        assert cfg.own_game_eval.show_game_context is False
+
+    def test_apply_partial(self):
+        cfg = AppConfig()
+        _apply_toml(cfg, {"own_game_eval": {"cp_tolerance": 100}})
+        assert cfg.own_game_eval.cp_tolerance == 100
+        assert cfg.own_game_eval.multipv_count == 3  # Unchanged
+
+    def test_preserves_other_sections(self):
+        cfg = AppConfig()
+        _apply_toml(cfg, {"web": {"port": 9000}, "own_game_eval": {"cp_tolerance": 30}})
+        assert cfg.web.port == 9000
+        assert cfg.own_game_eval.cp_tolerance == 30
+
+
+class TestOwnGameEvalApplyEnv:
+    """Tests for own_game_eval env variable overrides."""
+
+    def test_env_cp_tolerance(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_OWN_GAME_CP_TOLERANCE", "100")
+        _apply_env(cfg)
+        assert cfg.own_game_eval.cp_tolerance == 100
+
+    def test_env_multipv(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_OWN_GAME_MULTIPV", "5")
+        _apply_env(cfg)
+        assert cfg.own_game_eval.multipv_count == 5
+
+    def test_env_eval_depth(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_OWN_GAME_EVAL_DEPTH", "2")
+        _apply_env(cfg)
+        assert cfg.own_game_eval.evaluate_depth == 2
+
+    def test_env_show_context(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_OWN_GAME_SHOW_CONTEXT", "false")
+        _apply_env(cfg)
+        assert cfg.own_game_eval.show_game_context is False
+
+
+class TestOwnGameEvalValidation:
+    """Tests for own_game_eval validation rules."""
+
+    def test_valid_cp_tolerance(self):
+        _validate_value("own_game_eval.cp_tolerance", 50)
+
+    def test_invalid_cp_tolerance_high(self):
+        with pytest.raises(ValueError, match="must be between"):
+            _validate_value("own_game_eval.cp_tolerance", 600)
+
+    def test_valid_multipv_count(self):
+        _validate_value("own_game_eval.multipv_count", 3)
+
+    def test_invalid_multipv_count(self):
+        with pytest.raises(ValueError, match="must be between"):
+            _validate_value("own_game_eval.multipv_count", 0)
+
+    def test_valid_evaluate_depth(self):
+        _validate_value("own_game_eval.evaluate_depth", 1)
+
+    def test_invalid_evaluate_depth(self):
+        with pytest.raises(ValueError, match="must be between"):
+            _validate_value("own_game_eval.evaluate_depth", 0)
+
+
+class TestOwnGameEvalSetConfig:
+    """Tests for set/get of own_game_eval config keys."""
+
+    def test_get_config_keys_includes_own_game_eval(self):
+        keys = get_config_keys()
+        assert "own_game_eval.cp_tolerance" in keys
+        assert "own_game_eval.multipv_count" in keys
+        assert "own_game_eval.evaluate_depth" in keys
+        assert "own_game_eval.show_game_context" in keys
+        assert keys["own_game_eval.cp_tolerance"] is int
+        assert keys["own_game_eval.show_game_context"] is bool
+
+    def test_get_config_value(self):
+        cfg = AppConfig()
+        assert get_config_value(cfg, "own_game_eval.cp_tolerance") == 50
+        assert get_config_value(cfg, "own_game_eval.show_game_context") is True
+
+    def test_set_config_value(self, tmp_path):
+        path = tmp_path / "config.toml"
+        result = set_config_value("own_game_eval.cp_tolerance", "75", config_path=path)
+        assert result == 75
+
+    def test_set_config_out_of_range(self, tmp_path):
+        path = tmp_path / "config.toml"
+        with pytest.raises(ValueError, match="must be between"):
+            set_config_value("own_game_eval.cp_tolerance", "999", config_path=path)
+
+
+class TestOwnGameEvalDefaultConfig:
+    """Tests for own_game_eval section in generated default config."""
+
+    def test_default_config_has_own_game_eval_commented(self):
+        content = generate_default_config()
+        assert "# [own_game_eval]" in content
+        assert "# cp_tolerance = 50" in content
+        assert "# evaluate_depth = 1" in content
+        assert "# show_game_context = true" in content
