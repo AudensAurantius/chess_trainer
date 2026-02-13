@@ -94,6 +94,7 @@ async def login_submit(request: Request):
         "session_token",
         session.token,
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=svc.session_expiry_hours * 3600,
     )
@@ -142,6 +143,7 @@ async def register_submit(request: Request):
         "session_token",
         session.token,
         httponly=True,
+        secure=True,
         samesite="lax",
         max_age=svc.session_expiry_hours * 3600,
     )

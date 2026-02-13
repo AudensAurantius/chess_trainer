@@ -93,15 +93,15 @@ class TestDataIsolation:
         _seed_exercises(tenant_app, two_users["alice"].id, ["alice:001", "alice:002", "alice:003"])
         _seed_exercises(tenant_app, two_users["bob"].id, ["bob:001"])
 
-        # Alice's client
-        alice_client = TestClient(tenant_app)
+        # Alice's client (HTTPS so secure cookies round-trip)
+        alice_client = TestClient(tenant_app, base_url="https://testserver")
         _login(alice_client, "alice", "pass-alice")
         resp = alice_client.get("/api/stats")
         assert resp.status_code == 200
         assert resp.json()["exercise_count"] == 3
 
         # Bob's client
-        bob_client = TestClient(tenant_app)
+        bob_client = TestClient(tenant_app, base_url="https://testserver")
         _login(bob_client, "bob", "pass-bob")
         resp = bob_client.get("/api/stats")
         assert resp.status_code == 200
@@ -112,10 +112,10 @@ class TestDataIsolation:
         _seed_exercises(tenant_app, two_users["alice"].id, ["alice:001"])
         _seed_exercises(tenant_app, two_users["bob"].id, ["bob:001"])
 
-        alice_client = TestClient(tenant_app)
+        alice_client = TestClient(tenant_app, base_url="https://testserver")
         _login(alice_client, "alice", "pass-alice")
 
-        bob_client = TestClient(tenant_app)
+        bob_client = TestClient(tenant_app, base_url="https://testserver")
         _login(bob_client, "bob", "pass-bob")
 
         # Both start sessions

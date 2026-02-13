@@ -22,7 +22,7 @@ def auth_app(tmp_path):
 
 @pytest.fixture
 def auth_client(auth_app):
-    return TestClient(auth_app)
+    return TestClient(auth_app, base_url="https://testserver")
 
 
 @pytest.fixture
@@ -50,13 +50,13 @@ def seeded_auth(auth_app):
 @pytest.fixture
 def seeded_auth_client(auth_app, seeded_auth):
     """Client with a pre-registered user (not logged in)."""
-    return TestClient(auth_app)
+    return TestClient(auth_app, base_url="https://testserver")
 
 
 @pytest.fixture
 def logged_in_client(auth_app, seeded_auth):
     """Client that is already logged in."""
-    client = TestClient(auth_app)
+    client = TestClient(auth_app, base_url="https://testserver")
     resp = client.post(
         "/login",
         data={"username": "testuser", "password": "password123"},
@@ -302,7 +302,9 @@ class TestSessionFlow:
             [datetime.now(UTC) - timedelta(hours=1), session.token],
         )
 
-        client = TestClient(auth_app, cookies={"session_token": session.token})
+        client = TestClient(
+            auth_app, base_url="https://testserver", cookies={"session_token": session.token}
+        )
         resp = client.get("/", follow_redirects=False)
         assert resp.status_code == 302
         assert resp.headers["location"] == "/login"
