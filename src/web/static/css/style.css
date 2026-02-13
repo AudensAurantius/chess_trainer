@@ -438,6 +438,62 @@ body {
 .badge-review { background: rgba(98, 153, 36, 0.2); color: var(--success); }
 .badge-relearning { background: rgba(204, 51, 51, 0.2); color: var(--danger); }
 
+/* Nav user/logout */
+.nav-user {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-left: auto;
+    padding: 0 0.5rem;
+}
+
+.nav-logout {
+    display: inline;
+}
+
+.nav-logout button {
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* Bundles grid */
+.bundles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.bundle-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+}
+
+.bundle-card h3 {
+    color: var(--text-bright);
+    font-size: 1.05rem;
+    margin-bottom: 0.35rem;
+}
+
+.bundle-meta {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.bundle-desc {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+
+.bundle-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
 /* Auth pages */
 .auth-container {
     max-width: 400px;

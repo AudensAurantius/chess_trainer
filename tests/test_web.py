@@ -93,6 +93,25 @@ class TestPages:
         assert ".auth-error" in res.text
         assert ".auth-link" in res.text
 
+    def test_css_has_nav_and_bundle_styles(self, client):
+        """CSS must include nav user/logout and bundle grid styles."""
+        res = client.get("/static/css/style.css")
+        assert ".nav-user" in res.text
+        assert ".nav-logout" in res.text
+        assert ".bundles-grid" in res.text
+        assert ".bundle-card" in res.text
+
+    def test_bundles_page(self, client):
+        res = client.get("/bundles")
+        assert res.status_code == 200
+        assert "Exercise Bundles" in res.text
+
+    def test_bundles_empty_state_no_cli_reference(self, client):
+        """Bundles empty state should not reference CLI."""
+        res = client.get("/bundles")
+        assert "chess-trainer" not in res.text
+        assert "No bundles yet" in res.text
+
 
 class TestSessionAPI:
     def test_start_empty(self, client):
