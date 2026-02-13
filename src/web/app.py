@@ -10,8 +10,8 @@ from fastapi.templating import Jinja2Templates
 from .. import __version__
 from ..config import AppConfig
 from .auth import AuthMiddleware, auth_router
+from .manager_pool import ManagerPool
 from .routes import router
-from .session_manager import SessionManager
 
 STATIC_DIR = Path(__file__).parent / "static"
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -36,17 +36,20 @@ def create_app(config: AppConfig) -> FastAPI:
         auth_store = AuthStore(config.auth.database_path)
         _ = auth_store.conn  # Force schema init
 
+    pool = ManagerPool(config)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
+        pool.close_all()
         if auth_store is not None:
             auth_store.close()
 
     app = FastAPI(title="Chess Trainer", version=__version__, lifespan=lifespan)
 
-    # Store config and session manager in app state
+    # Store config and manager pool in app state
     app.state.config = config
-    app.state.session_manager = SessionManager(config)
+    app.state.manager_pool = pool
     app.state.templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
     if config.auth.enabled and auth_store is not None:

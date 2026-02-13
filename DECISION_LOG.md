@@ -56,3 +56,12 @@ auth libraries. Sessions are revocable by deleting from the DB.
 The `AuthMiddleware` becomes a no-op (sets `request.state.user = None`, passes through).
 Only the hosted web deployment enables auth via config. This preserves the single-user
 CLI/local experience and ensures existing tests pass without modification.
+
+### DEC-011: Per-user DuckDB files for multi-tenant storage (v3.2-B2)
+Each authenticated user gets their own `trainer.db` at `{data_dir}/{user_id}/trainer.db`.
+A `ManagerPool` replaces the singleton `SessionManager`, lazily creating per-user managers.
+Alternatives considered: (a) shared DB + user_id columns — rejected because it requires
+schema changes to every table, every query gains a WHERE clause, and one missed filter leaks
+data; (b) per-request Repository — rejected because SessionManager must persist training
+session state (exercise queue, board position) across HTTP requests. Auth-disabled mode is
+fully backwards-compatible via a `_default` sentinel key in the pool.

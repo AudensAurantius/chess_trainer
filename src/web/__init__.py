@@ -5,5 +5,6 @@ with chessboard.js for interactive board display.
 """
 
 from .app import create_app
+from .manager_pool import ManagerPool
 
-__all__ = ["create_app"]
+__all__ = ["ManagerPool", "create_app"]

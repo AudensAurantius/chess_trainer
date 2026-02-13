@@ -34,12 +34,19 @@ class ExerciseState:
 class SessionManager:
     """Manages the training session lifecycle for the web interface.
 
-    Single-user model: one active session at a time.
+    Each instance is tied to a single database file. In multi-tenant
+    mode, the ManagerPool creates one per authenticated user.
     """
 
-    def __init__(self, config: AppConfig) -> None:
-        """Initialize session manager with app config."""
+    def __init__(self, config: AppConfig, db_path: Path | None = None) -> None:
+        """Initialize session manager with app config.
+
+        Args:
+            config: Application configuration.
+            db_path: Override database path. Uses ``config.database.path`` if None.
+        """
         self.config = config
+        self._db_path = db_path or Path(config.database.path)
         self._session: TrainingSession | None = None
         self._woodpecker_session = None
         self._repo: Repository | None = None
@@ -68,7 +75,7 @@ class SessionManager:
     def _open_repo(self) -> Repository:
         """Open (or reuse) the repository connection."""
         if self._repo is None:
-            self._repo = Repository(Path(self.config.database.path))
+            self._repo = Repository(self._db_path)
             self._repo.__enter__()
         return self._repo
 

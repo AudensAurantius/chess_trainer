@@ -47,7 +47,7 @@ src/
 ├── chesscom/        # Chess.com API client (mirrors src/lichess/)
 ├── lichess/         # Lichess API client
 ├── cli/             # Typer CLI with board renderer
-├── web/             # FastAPI web GUI (Jinja2 + chessboard.js + auth middleware)
+├── web/             # FastAPI web GUI (Jinja2 + chessboard.js + auth + multi-tenant pool)
 └── config.py        # TOML config with hierarchical overrides (defaults → file → env → CLI)
 ```
 
@@ -69,6 +69,9 @@ src/
 - `AuthService(store, session_expiry_hours)` — business logic layer for register/login/session
 - Auth exceptions: `AuthError` base, `InvalidInviteCodeError`, `InvalidCredentialsError`, etc.
 - Auth is optional: `config.auth.enabled = False` (default) — middleware is a no-op
+- `ManagerPool(config)` replaces singleton SessionManager; `pool.get(user_id)` → per-user manager
+- `SessionManager(config, db_path=)` — accepts optional db_path override for multi-tenant
+- Per-user DB path: `{config.database.data_dir}/{user_id}/trainer.db` (auth enabled only)
 
 ## Coding Conventions
 

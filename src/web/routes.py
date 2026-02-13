@@ -12,8 +12,10 @@ def _templates(request: Request):
 
 
 def _manager(request: Request):
-    """Get the SessionManager from app state."""
-    return request.app.state.session_manager
+    """Get the per-user SessionManager from the pool."""
+    user = _user(request)
+    pool = request.app.state.manager_pool
+    return pool.get(user.id if user else None)
 
 
 def _user(request: Request):
