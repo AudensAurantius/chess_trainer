@@ -84,6 +84,50 @@ class TestPages:
         res = client.get("/train")
         assert 'rel="icon"' in res.text
 
+    def test_css_has_auth_styles(self, client):
+        """CSS must include auth page styles."""
+        res = client.get("/static/css/style.css")
+        assert ".auth-container" in res.text
+        assert ".auth-form" in res.text
+        assert ".form-group" in res.text
+        assert ".auth-error" in res.text
+        assert ".auth-link" in res.text
+
+    def test_css_has_nav_and_bundle_styles(self, client):
+        """CSS must include nav user/logout and bundle grid styles."""
+        res = client.get("/static/css/style.css")
+        assert ".nav-user" in res.text
+        assert ".nav-logout" in res.text
+        assert ".bundles-grid" in res.text
+        assert ".bundle-card" in res.text
+
+    def test_bundles_page(self, client):
+        res = client.get("/bundles")
+        assert res.status_code == 200
+        assert "Exercise Bundles" in res.text
+
+    def test_bundles_empty_state_no_cli_reference(self, client):
+        """Bundles empty state should not reference CLI."""
+        res = client.get("/bundles")
+        assert "chess-trainer" not in res.text
+        assert "No bundles yet" in res.text
+
+    def test_dashboard_empty_state_has_import_link(self, client):
+        """Dashboard with no exercises shows import CTA."""
+        res = client.get("/")
+        assert 'href="/import"' in res.text
+        assert "Import Exercises" in res.text
+
+    def test_dashboard_with_exercises_has_start_training(self, seeded_client):
+        """Dashboard with exercises shows Start Training."""
+        res = seeded_client.get("/")
+        assert "Start Training" in res.text
+
+    def test_training_js_has_import_link(self, client):
+        """training.js empty-queue message links to /import."""
+        res = client.get("/static/js/training.js")
+        assert "/import" in res.text
+
 
 class TestSessionAPI:
     def test_start_empty(self, client):
@@ -173,3 +217,37 @@ class TestStatsAPI:
         assert res.status_code == 200
         data = res.json()
         assert "exercise_count" in data
+
+    def test_stats_page_has_analytics_containers(self, client):
+        """Stats page should include analytics section divs."""
+        res = client.get("/stats")
+        assert 'id="analytics-streaks"' in res.text
+        assert 'id="analytics-weak-areas"' in res.text
+
+    def test_streaks_api_returns_200(self, client):
+        res = client.get("/api/analytics/streaks")
+        assert res.status_code == 200
+        data = res.json()
+        assert "current_streak" in data
+        assert "longest_streak" in data
+        assert "total_active_days" in data
+
+    def test_weak_areas_api_returns_200(self, client):
+        res = client.get("/api/analytics/weak-areas")
+        assert res.status_code == 200
+        data = res.json()
+        assert "areas" in data
+
+
+class TestErrorHandlers:
+    def test_404_html_page(self, client):
+        res = client.get("/nonexistent-page")
+        assert res.status_code == 404
+        assert "not found" in res.text.lower()
+        assert "dashboard" in res.text.lower()
+
+    def test_404_api_json(self, client):
+        res = client.get("/api/nonexistent")
+        assert res.status_code == 404
+        data = res.json()
+        assert "error" in data

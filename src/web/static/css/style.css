@@ -438,6 +438,233 @@ body {
 .badge-review { background: rgba(98, 153, 36, 0.2); color: var(--success); }
 .badge-relearning { background: rgba(204, 51, 51, 0.2); color: var(--danger); }
 
+/* Nav user/logout */
+.nav-user {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-left: auto;
+    padding: 0 0.5rem;
+}
+
+.nav-logout {
+    display: inline;
+}
+
+.nav-logout button {
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+/* Bundles grid */
+.bundles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.bundle-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+}
+
+.bundle-card h3 {
+    color: var(--text-bright);
+    font-size: 1.05rem;
+    margin-bottom: 0.35rem;
+}
+
+.bundle-meta {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.bundle-desc {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+
+.bundle-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Analytics sections */
+.analytics-section {
+    margin-top: 2rem;
+}
+
+.analytics-section h2 {
+    color: var(--text-bright);
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+.accuracy-bar-track {
+    display: inline-block;
+    width: 80px;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
+.accuracy-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    margin: 2rem 0;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
+/* Import page */
+.import-section {
+    max-width: 560px;
+    margin: 0 auto;
+}
+
+.import-section h1 {
+    color: var(--text-bright);
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.import-form h2 {
+    color: var(--text-bright);
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.import-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin: 1.25rem 0;
+}
+
+.import-fields .form-group input,
+.import-fields .form-group select {
+    width: 100%;
+}
+
+.import-fields select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    font-family: var(--font-main);
+}
+
+.import-fields select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.import-form .btn {
+    margin-bottom: 1rem;
+}
+
+/* Auth pages */
+.auth-container {
+    max-width: 400px;
+    margin: 3rem auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+}
+
+.auth-container h1 {
+    color: var(--text-bright);
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.auth-form .btn {
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.form-group label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.form-group input {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+    font-family: var(--font-main);
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.auth-error {
+    background: rgba(204, 51, 51, 0.15);
+    color: var(--danger);
+    border: 1px solid rgba(204, 51, 51, 0.3);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.auth-link {
+    text-align: center;
+    margin-top: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.auth-link a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.auth-link a:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+
 /* Utility */
 .dim { color: var(--text-secondary); }
 .text-center { text-align: center; }

@@ -35,7 +35,7 @@ async function startSession() {
         const data = await res.json();
 
         if (data.queue_size === 0) {
-            showStartFeedback('No cards due for review. Import some puzzles first!', 'info');
+            showStartFeedback('No cards due for review. <a href="/import">Import some puzzles</a> first!', 'info');
             return;
         }
 
@@ -351,7 +351,7 @@ function hideFeedback() {
 
 function showStartFeedback(message, type) {
     const el = document.getElementById('start-feedback');
-    el.textContent = message;
+    el.innerHTML = message;
     el.className = 'feedback feedback-' + type;
     el.style.display = 'block';
 }

@@ -327,6 +327,56 @@ class SessionManager:
             **card_stats,
         }
 
+    # ── Import support ──────────────────────────────────────────────────────
+
+    def import_lichess_puzzles(
+        self,
+        count: int = 20,
+        difficulty: str | None = None,
+        themes: list[str] | None = None,
+    ) -> dict:
+        """Import puzzles from Lichess, create cards, and sync tags.
+
+        Args:
+            count: Number of puzzles to fetch (max 100).
+            difficulty: Optional difficulty filter.
+            themes: Optional list of tactical themes.
+
+        Returns:
+            Dict with added, skipped, errors counts.
+        """
+        from ..importers.lichess_puzzles import LichessPuzzleImporter
+        from ..storage.tag_store import EntityType, TagSource
+
+        count = min(count, 100)
+        repo = self._open_repo()
+        importer = LichessPuzzleImporter()
+        result = importer.import_to(
+            repo.exercises,
+            count=count,
+            difficulty=difficulty,
+            themes=themes,
+        )
+
+        # Create review cards for newly imported exercises
+        cards_created = 0
+        for exercise in repo.exercises.search(source="lichess"):
+            card = repo.cards.get_or_create(exercise.id)
+            if card.reps == 0:
+                cards_created += 1
+            # Sync tags from the exercise
+            if exercise.tags:
+                repo.tags.add_tags(
+                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
+                )
+
+        return {
+            "added": result.total_added,
+            "skipped": result.total_skipped,
+            "errors": len(result.errors),
+            "cards_created": cards_created,
+        }
+
     # ── Bundle session support ─────────────────────────────────────────────
 
     def list_bundles(self) -> list[dict]:
