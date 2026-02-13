@@ -112,6 +112,22 @@ class TestPages:
         assert "chess-trainer" not in res.text
         assert "No bundles yet" in res.text
 
+    def test_dashboard_empty_state_has_import_link(self, client):
+        """Dashboard with no exercises shows import CTA."""
+        res = client.get("/")
+        assert 'href="/import"' in res.text
+        assert "Import Exercises" in res.text
+
+    def test_dashboard_with_exercises_has_start_training(self, seeded_client):
+        """Dashboard with exercises shows Start Training."""
+        res = seeded_client.get("/")
+        assert "Start Training" in res.text
+
+    def test_training_js_has_import_link(self, client):
+        """training.js empty-queue message links to /import."""
+        res = client.get("/static/js/training.js")
+        assert "/import" in res.text
+
 
 class TestSessionAPI:
     def test_start_empty(self, client):

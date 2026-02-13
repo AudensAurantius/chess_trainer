@@ -24,9 +24,16 @@
         </div>
     </div>
 
+    {% if stats.get('exercise_count', 0) == 0 %}
+    <div class="empty-state">
+        <p>Welcome! Import some exercises to get started.</p>
+        <a href="/import" class="btn btn-primary btn-large">Import Exercises</a>
+    </div>
+    {% else %}
     <div class="action-panel">
         <a href="/train" class="btn btn-primary btn-large">Start Training</a>
     </div>
+    {% endif %}
 
     {% if stats.get('state_counts') %}
     <div class="card-states">

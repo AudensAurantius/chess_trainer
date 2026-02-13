@@ -494,6 +494,19 @@ body {
     gap: 0.5rem;
 }
 
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    margin: 2rem 0;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+}
+
 /* Import page */
 .import-section {
     max-width: 560px;
