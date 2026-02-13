@@ -139,6 +139,117 @@ class TestTacticExercise:
         assert ex.exercise_type == ExerciseType.TACTIC
 
 
+class TestTacticAcceptableFirstMoves:
+    """Tests for TacticExercise acceptable_first_moves and evaluate_depth."""
+
+    # Position where Qc7, Qd7, Qe7 could all be reasonable
+    FEN = "r1bqkb1r/pppppppp/2n2n2/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 2 2"
+
+    def _make_tactic(self, **kwargs):
+        defaults = {
+            "id": "test:t2",
+            "fen": self.FEN,
+            "tags": ["own_game"],
+            "source": "game_analysis",
+            "solution": ["d8c7", "e4e5", "f6d5"],
+            "themes": ["own_game"],
+        }
+        defaults.update(kwargs)
+        return TacticExercise(**defaults)
+
+    def test_default_empty_acceptable_moves(self):
+        ex = self._make_tactic()
+        assert ex.acceptable_first_moves == []
+        assert ex.best_move_eval is None
+        assert ex.evaluate_depth is None
+
+    def test_evaluate_exact_match_still_works(self):
+        """With evaluate_depth=1, exact solution first move is correct."""
+        ex = self._make_tactic(acceptable_first_moves=["d8d7", "d8e7"], evaluate_depth=1)
+        result = ex.evaluate([chess.Move.from_uci("d8c7")], 5000)
+        assert result.correct is True
+
+    def test_evaluate_acceptable_first_move(self):
+        """With evaluate_depth=1, acceptable first move is correct."""
+        ex = self._make_tactic(acceptable_first_moves=["d8d7", "d8e7"], evaluate_depth=1)
+        result = ex.evaluate([chess.Move.from_uci("d8d7")], 5000)
+        assert result.correct is True
+
+    def test_evaluate_unacceptable_first_move(self):
+        ex = self._make_tactic(acceptable_first_moves=["d8d7", "d8e7"], evaluate_depth=1)
+        result = ex.evaluate([chess.Move.from_uci("d8b6")], 5000)
+        assert result.correct is False
+
+    def test_evaluate_depth_one_correct_first_move(self):
+        """With evaluate_depth=1, only the first user move matters."""
+        ex = self._make_tactic(evaluate_depth=1)
+        result = ex.evaluate([chess.Move.from_uci("d8c7")], 5000)
+        assert result.correct is True
+
+    def test_evaluate_depth_one_wrong_first_move(self):
+        ex = self._make_tactic(evaluate_depth=1)
+        result = ex.evaluate([chess.Move.from_uci("d8b6")], 5000)
+        assert result.correct is False
+
+    def test_evaluate_depth_one_with_acceptable(self):
+        """Depth=1 + acceptable moves: alternative first move is accepted."""
+        ex = self._make_tactic(evaluate_depth=1, acceptable_first_moves=["d8d7"])
+        result = ex.evaluate([chess.Move.from_uci("d8d7")], 5000)
+        assert result.correct is True
+
+    def test_evaluate_depth_none_checks_all(self):
+        """Without evaluate_depth, all user moves are checked."""
+        ex = self._make_tactic()
+        # Full solution: d8c7, [e4e5 opponent], f6d5
+        # User plays first correctly, second wrong
+        result = ex.evaluate([chess.Move.from_uci("d8c7"), chess.Move.from_uci("f6e4")], 5000)
+        assert result.correct is False
+        assert result.partial_credit == pytest.approx(0.5)
+
+    def test_serialization_roundtrip(self):
+        ex = self._make_tactic(
+            acceptable_first_moves=["d8d7", "d8e7"],
+            best_move_eval=150,
+            evaluate_depth=1,
+        )
+        data = ex.to_dict()
+        assert data["acceptable_first_moves"] == ["d8d7", "d8e7"]
+        assert data["best_move_eval"] == 150
+        assert data["evaluate_depth"] == 1
+
+        restored = TacticExercise.from_dict(data)
+        assert restored.acceptable_first_moves == ["d8d7", "d8e7"]
+        assert restored.best_move_eval == 150
+        assert restored.evaluate_depth == 1
+
+    def test_from_dict_defaults(self):
+        """from_dict without new fields returns defaults."""
+        data = {
+            "id": "test:old",
+            "fen": self.FEN,
+            "solution": ["d8c7"],
+        }
+        ex = TacticExercise.from_dict(data)
+        assert ex.acceptable_first_moves == []
+        assert ex.best_move_eval is None
+        assert ex.evaluate_depth is None
+
+    def test_evaluate_depth_greater_than_solution(self):
+        """evaluate_depth > available user moves: evaluates all available."""
+        ex = self._make_tactic(evaluate_depth=10)
+        result = ex.evaluate([chess.Move.from_uci("d8c7"), chess.Move.from_uci("f6d5")], 5000)
+        assert result.correct is True
+
+    def test_acceptable_only_applies_to_first_move(self):
+        """Acceptable moves only apply to the first user move, not subsequent ones."""
+        ex = self._make_tactic(acceptable_first_moves=["f6d5"])
+        # f6d5 is acceptable as first move but d8c7 is the exact solution
+        # User plays d8c7 (exact), then tries f6e4 (wrong second move)
+        result = ex.evaluate([chess.Move.from_uci("d8c7"), chess.Move.from_uci("f6e4")], 5000)
+        assert result.correct is False
+        assert result.partial_credit == pytest.approx(0.5)
+
+
 class TestEndgameExerciseTablebase:
     """Tests for EndgameExercise.evaluate() with tablebase integration."""
 

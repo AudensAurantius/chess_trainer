@@ -24,6 +24,9 @@ class TacticExercise(Exercise):
     solution: list[str] = field(default_factory=list)  # UCI move strings
     themes: list[str] = field(default_factory=list)  # fork, pin, skewer, etc.
     game_id: str | None = None  # Source game if from a real game
+    acceptable_first_moves: list[str] = field(default_factory=list)  # UCI near-optimal first moves
+    best_move_eval: int | None = None  # Centipawn score of best move
+    evaluate_depth: int | None = None  # User moves to evaluate (None = all)
 
     def get_challenge(self) -> str:
         """Return the challenge text for this tactic."""
@@ -56,13 +59,24 @@ class TacticExercise(Exercise):
         # For tactics, we typically only check the first move (user's move)
         # The solution alternates: user move, opponent response, user move, ...
         user_solution_moves = solution_moves[::2]  # Every other move starting at 0
+
+        # Apply evaluate_depth: only check this many user moves
+        if self.evaluate_depth is not None:
+            user_solution_moves = user_solution_moves[: self.evaluate_depth]
+
         user_played = moves[: len(user_solution_moves)]
 
-        # Check how many moves match
+        # Check how many moves match (with acceptable first moves for move 0)
         correct_count = 0
-        for played, expected in zip(user_played, user_solution_moves):
+        for i, (played, expected) in enumerate(zip(user_played, user_solution_moves)):
             if played == expected:
                 correct_count += 1
+            elif i == 0 and self.acceptable_first_moves:
+                # First move: also accept near-optimal alternatives
+                if played.uci() in self.acceptable_first_moves:
+                    correct_count += 1
+                else:
+                    break
             else:
                 break
 
@@ -111,6 +125,9 @@ class TacticExercise(Exercise):
             "solution": self.solution,
             "themes": self.themes,
             "game_id": self.game_id,
+            "acceptable_first_moves": self.acceptable_first_moves,
+            "best_move_eval": self.best_move_eval,
+            "evaluate_depth": self.evaluate_depth,
         }
 
     @classmethod
@@ -130,4 +147,7 @@ class TacticExercise(Exercise):
             solution=data.get("solution", []),
             themes=data.get("themes", []),
             game_id=data.get("game_id"),
+            acceptable_first_moves=data.get("acceptable_first_moves", []),
+            best_move_eval=data.get("best_move_eval"),
+            evaluate_depth=data.get("evaluate_depth"),
         )
