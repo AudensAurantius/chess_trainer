@@ -329,16 +329,18 @@ class SessionManager:
         result = []
         for b in bundles:
             progress = repo.bundles.get_progress(b.id)
-            result.append({
-                "id": b.id,
-                "slug": b.slug,
-                "name": b.name,
-                "description": b.description,
-                "exercise_count": b.exercise_count,
-                "woodpecker_mode": b.config.woodpecker_mode,
-                "current_cycle": progress.current_cycle if progress else 1,
-                "completed_cycles": len(progress.completed_cycles) if progress else 0,
-            })
+            result.append(
+                {
+                    "id": b.id,
+                    "slug": b.slug,
+                    "name": b.name,
+                    "description": b.description,
+                    "exercise_count": b.exercise_count,
+                    "woodpecker_mode": b.config.woodpecker_mode,
+                    "current_cycle": progress.current_cycle if progress else 1,
+                    "completed_cycles": len(progress.completed_cycles) if progress else 0,
+                }
+            )
         return result
 
     def start_bundle_session(self, slug: str) -> dict:

@@ -711,7 +711,9 @@ app.add_typer(tag_app, name="tag")
 def tag_add(
     entity_id: str = typer.Argument(help="Exercise or opening ID"),
     tags: list[str] = typer.Argument(help="Tags to add"),
-    entity_type: str = typer.Option("exercise", "--type", "-t", help="Entity type: exercise or opening"),
+    entity_type: str = typer.Option(
+        "exercise", "--type", "-t", help="Entity type: exercise or opening"
+    ),
     db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Add custom tags to an exercise or opening."""
@@ -742,7 +744,9 @@ def tag_add(
 def tag_remove(
     entity_id: str = typer.Argument(help="Exercise or opening ID"),
     tags: list[str] = typer.Argument(help="Tags to remove"),
-    entity_type: str = typer.Option("exercise", "--type", "-t", help="Entity type: exercise or opening"),
+    entity_type: str = typer.Option(
+        "exercise", "--type", "-t", help="Entity type: exercise or opening"
+    ),
     db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """Remove tags from an exercise or opening."""
@@ -762,7 +766,9 @@ def tag_remove(
 @tag_app.command("list")
 def tag_list(
     entity_type: str | None = typer.Option(None, "--type", "-t", help="Filter by entity type"),
-    source: str | None = typer.Option(None, "--source", "-s", help="Filter by source: user or system"),
+    source: str | None = typer.Option(
+        None, "--source", "-s", help="Filter by source: user or system"
+    ),
     db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
     """List all tags with their usage counts."""
@@ -1006,9 +1012,7 @@ def bundle_show(
         if bundle.description:
             console.print(f"  {bundle.description}")
         console.print(f"  Exercises: {bundle.exercise_count}")
-        console.print(
-            f"  Mode: {'Woodpecker' if bundle.config.woodpecker_mode else 'Standard'}"
-        )
+        console.print(f"  Mode: {'Woodpecker' if bundle.config.woodpecker_mode else 'Standard'}")
         console.print(f"  Pass threshold: {bundle.config.pass_threshold:.0%}")
         console.print(f"  Shuffle: {bundle.config.shuffle}")
         if bundle.config.time_limit_seconds:
@@ -1029,9 +1033,7 @@ def bundle_show(
             if progress.completed_cycles:
                 for cr in progress.completed_cycles:
                     status = "[green]PASS[/green]" if cr.passed else "[red]FAIL[/red]"
-                    console.print(
-                        f"    Cycle {cr.cycle_number}: {cr.accuracy:.0%} {status}"
-                    )
+                    console.print(f"    Cycle {cr.cycle_number}: {cr.accuracy:.0%} {status}")
 
         # Show first few exercise IDs
         if bundle.exercise_ids:
@@ -1208,8 +1210,7 @@ def bundle_train(
         limit_str = f" ({session.time_limit}s per exercise)" if session.time_limit else ""
 
         console.print(
-            f"\n[bold]{bundle.name}[/bold] \u2014 Cycle {cycle}, "
-            f"{total} exercises{limit_str}"
+            f"\n[bold]{bundle.name}[/bold] \u2014 Cycle {cycle}, {total} exercises{limit_str}"
         )
         if not self_report:
             console.print(
@@ -1232,10 +1233,7 @@ def bundle_train(
                 Panel.fit(
                     render_board(board, flipped=flipped),
                     title=progress_str,
-                    subtitle=(
-                        f"[dim]{exercise.exercise_type.name}"
-                        f" | Cycle {cycle}[/dim]"
-                    ),
+                    subtitle=(f"[dim]{exercise.exercise_type.name} | Cycle {cycle}[/dim]"),
                 )
             )
             console.print(f"[bold]{exercise.get_challenge()}[/bold]")
@@ -3068,6 +3066,98 @@ def web(
     web_app = create_app(cfg)
     console.print(f"[green]Starting web server at http://{bind_host}:{bind_port}[/green]")
     uvicorn.run(web_app, host=bind_host, port=bind_port)
+
+
+# ── Auth subcommand group ────────────────────────────────────────────────────
+
+auth_app = typer.Typer(help="Manage user authentication")
+app.add_typer(auth_app, name="auth")
+
+
+@auth_app.command("create-invite")
+def auth_create_invite(
+    count: int = typer.Option(1, "--count", "-n", help="Number of invite codes to generate"),
+):
+    """Generate invite codes for user registration."""
+    from ..auth.service import AuthService
+    from ..auth.store import AuthStore
+
+    cfg = _get_config()
+    with AuthStore(cfg.auth.database_path) as store:
+        svc = AuthService(store, cfg.auth.session_expiry_hours)
+        for _ in range(count):
+            code = svc.create_invite_code()
+            console.print(code)
+
+
+@auth_app.command("list-invites")
+def auth_list_invites():
+    """Show all invite codes with usage status."""
+    from ..auth.store import AuthStore
+
+    cfg = _get_config()
+    with AuthStore(cfg.auth.database_path) as store:
+        invites = store.list_invites()
+        if not invites:
+            console.print("[dim]No invite codes found.[/dim]")
+            return
+        table = Table(title="Invite Codes")
+        table.add_column("Code", style="cyan")
+        table.add_column("Created")
+        table.add_column("Used By")
+        table.add_column("Used At")
+        for inv in invites:
+            table.add_row(
+                inv.code,
+                str(inv.created_at)[:19],
+                inv.used_by or "",
+                str(inv.used_at)[:19] if inv.used_at else "",
+            )
+        console.print(table)
+
+
+@auth_app.command("list-users")
+def auth_list_users():
+    """Show all registered users."""
+    from ..auth.store import AuthStore
+
+    cfg = _get_config()
+    with AuthStore(cfg.auth.database_path) as store:
+        users = store.list_users()
+        if not users:
+            console.print("[dim]No users found.[/dim]")
+            return
+        table = Table(title="Users")
+        table.add_column("ID", style="cyan")
+        table.add_column("Username")
+        table.add_column("Created")
+        table.add_column("Active")
+        for u in users:
+            table.add_row(
+                u.id,
+                u.username,
+                str(u.created_at)[:19],
+                "[green]Yes[/green]" if u.is_active else "[red]No[/red]",
+            )
+        console.print(table)
+
+
+@auth_app.command("deactivate")
+def auth_deactivate(
+    username: str = typer.Argument(help="Username to deactivate"),
+):
+    """Deactivate a user account."""
+    from ..auth.store import AuthStore
+
+    cfg = _get_config()
+    with AuthStore(cfg.auth.database_path) as store:
+        user = store.get_user_by_username(username)
+        if not user:
+            console.print(f"[red]User '{username}' not found.[/red]")
+            raise typer.Exit(1)
+        store.deactivate_user(user.id)
+        store.delete_user_sessions(user.id)
+        console.print(f"[yellow]Deactivated user '{username}' and cleared sessions.[/yellow]")
 
 
 def main():

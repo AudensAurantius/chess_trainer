@@ -137,6 +137,16 @@ class ExperimentalConfig:
 
 
 @dataclass
+class AuthConfig:
+    """User authentication settings."""
+
+    enabled: bool = False
+    database_path: str = str(DEFAULT_CONFIG_DIR / "auth.db")
+    session_expiry_hours: int = 720  # 30 days
+    require_invite: bool = True
+
+
+@dataclass
 class AppConfig:
     """Top-level application configuration."""
 
@@ -153,6 +163,7 @@ class AppConfig:
     tablebase: TablebaseConfig = field(default_factory=TablebaseConfig)
     bundles: BundlesConfig = field(default_factory=BundlesConfig)
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
 
 # TODO: Consider simplifying using dataclasses-json or similar
@@ -274,6 +285,17 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "local_model_path" in exp:
             config.experimental.local_model_path = exp["local_model_path"]
 
+    if "auth" in data:
+        au = data["auth"]
+        if "enabled" in au:
+            config.auth.enabled = bool(au["enabled"])
+        if "database_path" in au:
+            config.auth.database_path = str(Path(au["database_path"]).expanduser())
+        if "session_expiry_hours" in au:
+            config.auth.session_expiry_hours = int(au["session_expiry_hours"])
+        if "require_invite" in au:
+            config.auth.require_invite = bool(au["require_invite"])
+
 
 def _apply_env(config: AppConfig) -> None:
     """Apply environment variable overrides onto an AppConfig."""
@@ -327,14 +349,20 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}EXPERIMENTAL_VISION_BACKEND": lambda v: setattr(
             config.experimental, "vision_backend", v
         ),
-        f"{ENV_PREFIX}CLAUDE_API_KEY": lambda v: setattr(
-            config.experimental, "claude_api_key", v
-        ),
+        f"{ENV_PREFIX}CLAUDE_API_KEY": lambda v: setattr(config.experimental, "claude_api_key", v),
         "ANTHROPIC_API_KEY": lambda v: setattr(config.experimental, "claude_api_key", v),
-        f"{ENV_PREFIX}OPENAI_API_KEY": lambda v: setattr(
-            config.experimental, "openai_api_key", v
-        ),
+        f"{ENV_PREFIX}OPENAI_API_KEY": lambda v: setattr(config.experimental, "openai_api_key", v),
         "OPENAI_API_KEY": lambda v: setattr(config.experimental, "openai_api_key", v),
+        f"{ENV_PREFIX}AUTH_ENABLED": lambda v: setattr(
+            config.auth, "enabled", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}AUTH_DB_PATH": lambda v: setattr(config.auth, "database_path", v),
+        f"{ENV_PREFIX}AUTH_SESSION_EXPIRY": lambda v: setattr(
+            config.auth, "session_expiry_hours", int(v)
+        ),
+        f"{ENV_PREFIX}AUTH_REQUIRE_INVITE": lambda v: setattr(
+            config.auth, "require_invite", v.lower() in ("true", "1", "yes")
+        ),
     }
     for key, setter in env_map.items():
         val = os.environ.get(key)
@@ -472,6 +500,12 @@ default_shuffle = false        # Shuffle exercise order within bundles
 # claude_api_key = "sk-ant-..."    # Anthropic API key (or set ANTHROPIC_API_KEY)
 # openai_api_key = "sk-..."        # OpenAI API key (or set OPENAI_API_KEY)
 # local_model_path = "/path/to/model"  # Local ONNX model for vision
+
+# [auth]
+# enabled = false                  # Enable user authentication for web UI
+# database_path = "~/.chess-trainer/auth.db"
+# session_expiry_hours = 720       # 30 days
+# require_invite = true            # Require invite code for registration
 """
 
 
@@ -599,6 +633,7 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "openings.explorer_source": ("enum", {"lichess", "masters", "player"}),
     "bundles.default_pass_threshold": ("range", 0.0, 1.0),
     "experimental.vision_backend": ("enum", {"claude", "openai", "local"}),
+    "auth.session_expiry_hours": ("range", 1, 87600),
 }
 
 
@@ -643,9 +678,7 @@ def get_config_value(config: AppConfig, key: str) -> object:
         raise KeyError(f"Unknown field {field_name!r} in section {section!r}")
 
 
-def set_config_value(
-    key: str, raw_value: str, config_path: Path | None = None
-) -> object:
+def set_config_value(key: str, raw_value: str, config_path: Path | None = None) -> object:
     """Validate, coerce, and persist a config value to the TOML file.
 
     Creates the file and parent directories if they don't exist.
@@ -678,7 +711,9 @@ def set_config_value(
     _validate_value(key, value)
 
     # Path expansion
-    if key in ("database.path", "tablebase.syzygy_path") and isinstance(value, str):
+    if key in ("database.path", "tablebase.syzygy_path", "auth.database_path") and isinstance(
+        value, str
+    ):
         value = str(Path(value).expanduser())
 
     # Read existing TOML
@@ -702,9 +737,7 @@ def set_config_value(
     return value
 
 
-def reset_config_value(
-    key: str | None = None, config_path: Path | None = None
-) -> None:
+def reset_config_value(key: str | None = None, config_path: Path | None = None) -> None:
     """Reset a config key to its default, or reset the entire file.
 
     Args:

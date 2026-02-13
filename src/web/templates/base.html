@@ -10,6 +10,7 @@
     {% block head %}{% endblock %}
 </head>
 <body>
+    {% if show_nav is not defined or show_nav != false %}
     <nav class="navbar">
         <div class="nav-brand">
             <a href="/">Chess Trainer</a>
@@ -19,8 +20,15 @@
             <a href="/train" class="nav-link">Train</a>
             <a href="/bundles" class="nav-link">Bundles</a>
             <a href="/stats" class="nav-link">Stats</a>
+            {% if user %}
+            <span class="nav-user">{{ user.username }}</span>
+            <form method="post" action="/logout" class="nav-logout">
+                <button type="submit" class="nav-link">Logout</button>
+            </form>
+            {% endif %}
         </div>
     </nav>
+    {% endif %}
 
     <main class="container">
         {% block content %}{% endblock %}

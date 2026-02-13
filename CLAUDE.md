@@ -32,6 +32,7 @@ Entry point: `chess-trainer` CLI via Typer (`src/cli/app.py`).
 
 ```
 src/
+├── auth/            # User authentication (models, passwords, store, service)
 ├── exercises/       # Domain model (base + tactics/openings/endgames/positional/bundle)
 ├── scheduling/      # FSRS-4.5 spaced repetition (ReviewCard, FSRSScheduler)
 ├── storage/         # DuckDB storage (Repository, ExerciseStore, CardStore, OpeningStore, TagStore, BundleStore)
@@ -46,7 +47,7 @@ src/
 ├── chesscom/        # Chess.com API client (mirrors src/lichess/)
 ├── lichess/         # Lichess API client
 ├── cli/             # Typer CLI with board renderer
-├── web/             # FastAPI web GUI (Jinja2 + chessboard.js)
+├── web/             # FastAPI web GUI (Jinja2 + chessboard.js + auth middleware)
 └── config.py        # TOML config with hierarchical overrides (defaults → file → env → CLI)
 ```
 
@@ -64,13 +65,17 @@ src/
 - `TagStore.find_by_tags(entity_type, tags, match_all)` — AND/OR logic
 - Session tag filter: `SessionConfig(include_tags=, exclude_tags=)` → OR logic for both
 - FSRS Rating: AGAIN(1), HARD(2), GOOD(3), EASY(4)
+- `AuthStore` manages its own DuckDB connection to `auth.db` (separate from `trainer.db`)
+- `AuthService(store, session_expiry_hours)` — business logic layer for register/login/session
+- Auth exceptions: `AuthError` base, `InvalidInviteCodeError`, `InvalidCredentialsError`, etc.
+- Auth is optional: `config.auth.enabled = False` (default) — middleware is a no-op
 
 ## Coding Conventions
 
 - **Style:** Google docstrings, type hints on all functions, `ruff` for lint+format
 - **Line length:** 100 chars (`pyproject.toml [tool.ruff]`)
 - **Commits:** Conventional Commits (`feat/fix/docs/test/refactor`), include `Co-Authored-By` trailer
-- **Testing:** Run full test suite before commits. Verify no regressions in test count.
+- **Testing:** All new functionality must have thorough unit tests. Write integration tests for cross-module interactions (e.g., storage ↔ domain, web ↔ storage). Run full test suite before commits. Verify no regressions in test count.
 - **Quality:** `ruff check --fix` before every commit. The pre-commit hook enforces this.
 - **Imports:** Use `from __future__ import annotations` + `TYPE_CHECKING` to avoid circular imports
 
@@ -86,6 +91,7 @@ src/
 8. **Mutable default args** in API functions: `dict = {}` → `dict | None = None`
 9. **SessionManager.start_bundle_session** must NOT call `end_session()` (which closes repo) — clear fields directly
 10. **`get_type_hints()`** with `from __future__ import annotations` returns `types.UnionType` for `str | None`, not `typing.Union`
+11. **DuckDB returns naive datetimes** — comparing with `datetime.now(UTC)` (timezone-aware) raises `TypeError`. Use `.replace(tzinfo=None)` or `datetime.utcnow()` equivalent for comparisons (`auth/service.py`)
 
 ## Package Layout
 

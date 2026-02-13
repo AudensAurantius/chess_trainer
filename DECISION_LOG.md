@@ -38,3 +38,21 @@ layout would be cleaner but would require renaming every import in the codebase.
 ### DEC-007: DELETE + INSERT instead of INSERT OR REPLACE for DuckDB FK tables (v2)
 DuckDB's INSERT OR REPLACE with foreign keys doesn't update all columns reliably.
 The workaround is explicit DELETE followed by INSERT. Documented in CLAUDE.md pitfalls.
+
+### DEC-008: Separate auth database from training data (v3.2-B1)
+Auth tables (users, invite_codes, sessions) live in `auth.db`, not `trainer.db`. B2 will
+give each user their own training DB, but auth must be global — you can't look up which
+user DB to open without first authenticating. The `AuthStore` class follows the same
+Repository pattern as the main storage layer (lazy connect, context manager, schema init).
+
+### DEC-009: Zero new dependencies for auth (v3.2-B1)
+Uses stdlib-only auth: `hashlib.pbkdf2_hmac('sha256')` with 600k iterations for password
+hashing, `secrets.token_urlsafe()` for session tokens and invite codes, DB-backed sessions
+(token in cookie, looked up in sessions table). No JWT, no signing keys, no third-party
+auth libraries. Sessions are revocable by deleting from the DB.
+
+### DEC-010: Auth is optional, disabled by default (v3.2-B1)
+`auth.enabled = false` is the default — CLI and local web server work exactly as before.
+The `AuthMiddleware` becomes a no-op (sets `request.state.user = None`, passes through).
+Only the hosted web deployment enables auth via config. This preserves the single-user
+CLI/local experience and ensures existing tests pass without modification.

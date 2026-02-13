@@ -16,18 +16,25 @@ def _manager(request: Request):
     return request.app.state.session_manager
 
 
+def _user(request: Request):
+    """Get the authenticated user (or None) from middleware state."""
+    return getattr(request.state, "user", None)
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Render the dashboard page."""
     manager = _manager(request)
     stats = manager.get_stats()
-    return _templates(request).TemplateResponse(request, "dashboard.html", {"stats": stats})
+    return _templates(request).TemplateResponse(
+        request, "dashboard.html", {"stats": stats, "user": _user(request)}
+    )
 
 
 @router.get("/train", response_class=HTMLResponse)
 async def train_page(request: Request):
     """Render the training page."""
-    return _templates(request).TemplateResponse(request, "train.html")
+    return _templates(request).TemplateResponse(request, "train.html", {"user": _user(request)})
 
 
 @router.get("/stats", response_class=HTMLResponse)
@@ -35,7 +42,9 @@ async def stats_page(request: Request):
     """Render the detailed statistics page."""
     manager = _manager(request)
     stats = manager.get_stats()
-    return _templates(request).TemplateResponse(request, "stats.html", {"stats": stats})
+    return _templates(request).TemplateResponse(
+        request, "stats.html", {"stats": stats, "user": _user(request)}
+    )
 
 
 # --- API endpoints ---
@@ -199,7 +208,7 @@ async def bundles_page(request: Request):
     manager = _manager(request)
     bundles = manager.list_bundles()
     return _templates(request).TemplateResponse(
-        request, "bundles.html", {"bundles": bundles}
+        request, "bundles.html", {"bundles": bundles, "user": _user(request)}
     )
 
 
@@ -277,15 +286,17 @@ async def api_bundles_detail(request: Request, slug: str):
         return JSONResponse({"error": "Bundle not found"}, status_code=404)
 
     progress = repo.bundles.get_progress(bundle.id)
-    return JSONResponse({
-        "id": bundle.id,
-        "name": bundle.name,
-        "description": bundle.description,
-        "exercise_count": bundle.exercise_count,
-        "exercise_ids": bundle.exercise_ids[:50],
-        "config": bundle.config.to_dict(),
-        "progress": progress.to_dict() if progress else None,
-    })
+    return JSONResponse(
+        {
+            "id": bundle.id,
+            "name": bundle.name,
+            "description": bundle.description,
+            "exercise_count": bundle.exercise_count,
+            "exercise_ids": bundle.exercise_ids[:50],
+            "config": bundle.config.to_dict(),
+            "progress": progress.to_dict() if progress else None,
+        }
+    )
 
 
 @router.delete("/api/bundles/{slug}")
@@ -331,10 +342,12 @@ async def api_bundles_progress(request: Request, slug: str):
     progress = repo.bundles.get_progress(generate_bundle_id(validated))
     if not progress:
         return JSONResponse({"cycles": [], "current_cycle": 1})
-    return JSONResponse({
-        "current_cycle": progress.current_cycle,
-        "cycles": [c.to_dict() for c in progress.completed_cycles],
-    })
+    return JSONResponse(
+        {
+            "current_cycle": progress.current_cycle,
+            "cycles": [c.to_dict() for c in progress.completed_cycles],
+        }
+    )
 
 
 @router.get("/api/analytics/retention")
