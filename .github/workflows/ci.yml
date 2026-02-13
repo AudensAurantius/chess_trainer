@@ -12,14 +12,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --group dev
+      - run: uv sync --all-extras
       - run: uv run ruff check src/ tests/
       - run: uv run ruff format --check src/ tests/
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --group dev --extra web
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --all-extras
       - run: uv run pytest tests/ -v --tb=short
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f Containerfile -t chess-trainer:ci .

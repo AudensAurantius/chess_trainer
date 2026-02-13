@@ -20,3 +20,6 @@ htmlcov/
 # Build artifacts
 dist/
 build/
+
+# Deployment secrets
+deploy/.env
