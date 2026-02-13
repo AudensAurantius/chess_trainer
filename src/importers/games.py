@@ -18,6 +18,7 @@ from ..analysis.mistakes import (
     EnginePositionAnalyzer,
     LichessServerAnalyzer,
     MistakeDetector,
+    PositionAnalyzer,
 )
 from ..exercises import Exercise
 from ..lichess.api import get_user_games
@@ -65,6 +66,9 @@ class GameImporter(Importer):
         min_classification: Minimum mistake severity for exercise generation.
         max_exercises: Maximum exercises per game.
         skip_first_plies: Number of opening plies to skip.
+        cp_tolerance: Centipawns within best to accept as alternative first move.
+        multipv_count: Number of multi-PV lines for acceptable move computation.
+        evaluate_depth: User moves to evaluate per exercise (1 = first move only).
     """
 
     def __init__(
@@ -75,6 +79,9 @@ class GameImporter(Importer):
         min_classification: MoveClassification = MoveClassification.MISTAKE,
         max_exercises: int = 10,
         skip_first_plies: int = 6,
+        cp_tolerance: int = 0,
+        multipv_count: int = 1,
+        evaluate_depth: int | None = None,
     ) -> None:
         """Initialize the importer with analysis parameters."""
         self._engine = engine
@@ -82,6 +89,9 @@ class GameImporter(Importer):
         self._min_classification = min_classification
         self._max_exercises = max_exercises
         self._skip_first_plies = skip_first_plies
+        self._cp_tolerance = cp_tolerance
+        self._multipv_count = multipv_count
+        self._evaluate_depth = evaluate_depth
 
     @property
     def source_name(self) -> str:
@@ -131,6 +141,18 @@ class GameImporter(Importer):
                 perf_type=perf_type,
             )
 
+    def _make_detector(self, analyzer: PositionAnalyzer) -> MistakeDetector:
+        """Create a MistakeDetector with the current config."""
+        return MistakeDetector(
+            analyzer,
+            min_classification=self._min_classification,
+            max_exercises=self._max_exercises,
+            skip_first_plies=self._skip_first_plies,
+            cp_tolerance=self._cp_tolerance,
+            multipv_count=self._multipv_count,
+            evaluate_depth=self._evaluate_depth,
+        )
+
     def _fetch_pgn(
         self,
         pgn_path: str | Path,
@@ -144,12 +166,7 @@ class GameImporter(Importer):
             return
 
         analyzer = EnginePositionAnalyzer(self._engine, depth=self._depth)
-        detector = MistakeDetector(
-            analyzer,
-            min_classification=self._min_classification,
-            max_exercises=self._max_exercises,
-            skip_first_plies=self._skip_first_plies,
-        )
+        detector = self._make_detector(analyzer)
 
         for game in games:
             yield from detector.generate_exercises(game, color=color)
@@ -199,12 +216,7 @@ class GameImporter(Importer):
             else:
                 continue
 
-            detector = MistakeDetector(
-                analyzer,
-                min_classification=self._min_classification,
-                max_exercises=self._max_exercises,
-                skip_first_plies=self._skip_first_plies,
-            )
+            detector = self._make_detector(analyzer)
 
             yield from detector.generate_exercises(
                 game,

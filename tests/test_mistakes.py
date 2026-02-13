@@ -15,6 +15,7 @@ from src.analysis.mistakes import (
     GameAnalysis,
     LichessServerAnalyzer,
     MistakeDetector,
+    MultiPVAnalyzer,
     PositionAnalyzer,
     PositionEval,
 )
@@ -802,3 +803,260 @@ class TestMockAnalyzer:
         analyzer.analyze_position(board)
         ev = analyzer.analyze_position(board)
         assert ev.score_cp == 0
+
+
+# ---------------------------------------------------------------------------
+# MockMultiPVAnalyzer
+# ---------------------------------------------------------------------------
+
+
+class MockMultiPVAnalyzer:
+    """A mock analyzer that supports both single-PV and multi-PV analysis."""
+
+    def __init__(
+        self,
+        evals: list[PositionEval],
+        multipv_results: dict[str, list[PositionEval]] | None = None,
+    ) -> None:
+        self._evals = evals
+        self._ply = 0
+        self._multipv_results = multipv_results or {}
+
+    def analyze_position(self, board: chess.Board) -> PositionEval:
+        if self._ply < len(self._evals):
+            ev = self._evals[self._ply]
+        else:
+            ev = PositionEval(score_cp=0)
+        self._ply += 1
+        return ev
+
+    def analyze_multipv(self, board: chess.Board, multipv: int) -> list[PositionEval]:
+        fen = board.fen()
+        if fen in self._multipv_results:
+            return self._multipv_results[fen]
+        return []
+
+
+# ---------------------------------------------------------------------------
+# MultiPVAnalyzer protocol tests
+# ---------------------------------------------------------------------------
+
+
+class TestMultiPVAnalyzer:
+    def test_engine_position_analyzer_implements_multipv(self):
+        mock_engine = MagicMock(spec=EngineManager)
+        analyzer = EnginePositionAnalyzer(mock_engine)
+        assert isinstance(analyzer, MultiPVAnalyzer)
+
+    def test_lichess_does_not_implement_multipv(self):
+        analyzer = LichessServerAnalyzer([])
+        assert not isinstance(analyzer, MultiPVAnalyzer)
+
+    def test_mock_multipv_protocol(self):
+        analyzer = MockMultiPVAnalyzer([])
+        assert isinstance(analyzer, MultiPVAnalyzer)
+
+    def test_engine_analyze_multipv(self):
+        mock_engine = MagicMock(spec=EngineManager)
+        mock_result = MagicMock()
+
+        line1 = MagicMock()
+        line1.pv = [chess.Move.from_uci("e2e4")]
+        line1.score_value = 30
+
+        line2 = MagicMock()
+        line2.pv = [chess.Move.from_uci("d2d4")]
+        line2.score_value = 25
+
+        line3 = MagicMock()
+        line3.pv = [chess.Move.from_uci("g1f3")]
+        line3.score_value = 15
+
+        mock_result.lines = [line1, line2, line3]
+        mock_engine.analyze.return_value = mock_result
+
+        analyzer = EnginePositionAnalyzer(mock_engine, depth=20)
+        board = chess.Board()
+        results = analyzer.analyze_multipv(board, 3)
+
+        mock_engine.analyze.assert_called_once_with(board, depth=20, multipv=3)
+        assert len(results) == 3
+        assert results[0].score_cp == 30
+        assert results[0].best_move == chess.Move.from_uci("e2e4")
+        assert results[1].score_cp == 25
+        assert results[2].score_cp == 15
+
+
+# ---------------------------------------------------------------------------
+# MistakeDetector multi-PV exercise generation tests
+# ---------------------------------------------------------------------------
+
+
+class TestMistakeDetectorMultiPV:
+    """Tests for multi-PV acceptable move computation in MistakeDetector."""
+
+    def _make_blunder_game(self):
+        """Create a game with a blunder at ply 2."""
+        game = _make_game(SHORT_GAME_PGN)
+        best_move = chess.Move.from_uci("d2d4")
+        d7d5 = chess.Move.from_uci("d7d5")
+        evals = [
+            PositionEval(score_cp=30),  # pos 0
+            PositionEval(score_cp=-25),  # pos 1
+            PositionEval(
+                score_cp=200,
+                best_move=best_move,
+                pv=[best_move, d7d5],
+            ),  # pos 2 — white has a great position
+            PositionEval(score_cp=50),  # pos 3 — cp_loss = 250
+            PositionEval(score_cp=20),  # pos 4
+            PositionEval(score_cp=-15),  # pos 5
+            PositionEval(score_cp=10),  # pos 6
+        ]
+        return game, evals
+
+    def _blunder_fen(self) -> str:
+        """FEN after 1.e4 e5 (white to play move 2)."""
+        board = chess.Board()
+        board.push_uci("e2e4")
+        board.push_uci("e7e5")
+        return board.fen()
+
+    def test_no_multipv_without_tolerance(self):
+        """With cp_tolerance=0, acceptable_first_moves stays empty."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockMultiPVAnalyzer(evals)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+            cp_tolerance=0,
+        )
+        exercises = list(detector.generate_exercises(game))
+        for ex in exercises:
+            assert ex.acceptable_first_moves == []
+
+    def test_multipv_populates_acceptable_moves(self):
+        """With cp_tolerance>0 and multipv analyzer, acceptable_first_moves is populated."""
+        game, evals = self._make_blunder_game()
+        fen = self._blunder_fen()
+
+        multipv_results = {
+            fen: [
+                PositionEval(score_cp=200, best_move=chess.Move.from_uci("d2d4")),
+                PositionEval(score_cp=190, best_move=chess.Move.from_uci("g1f3")),
+                PositionEval(score_cp=120, best_move=chess.Move.from_uci("f1c4")),
+            ]
+        }
+        analyzer = MockMultiPVAnalyzer(evals, multipv_results)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+            cp_tolerance=50,
+            multipv_count=3,
+        )
+        exercises = list(detector.generate_exercises(game))
+        blunder_ex = [e for e in exercises if "m2" in e.id]
+        assert len(blunder_ex) == 1
+        ex = blunder_ex[0]
+        # d2d4 (200cp) and g1f3 (190cp) are within 50cp of best
+        # f1c4 (120cp) is NOT within 50cp
+        assert "d2d4" in ex.acceptable_first_moves
+        assert "g1f3" in ex.acceptable_first_moves
+        assert "f1c4" not in ex.acceptable_first_moves
+
+    def test_multipv_best_move_eval_set(self):
+        """best_move_eval is set from the multi-PV top score."""
+        game, evals = self._make_blunder_game()
+        fen = self._blunder_fen()
+        multipv_results = {
+            fen: [
+                PositionEval(score_cp=200, best_move=chess.Move.from_uci("d2d4")),
+            ]
+        }
+        analyzer = MockMultiPVAnalyzer(evals, multipv_results)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+            cp_tolerance=50,
+            multipv_count=3,
+        )
+        exercises = list(detector.generate_exercises(game))
+        blunder_ex = [e for e in exercises if "m2" in e.id]
+        assert blunder_ex[0].best_move_eval == 200
+
+    def test_evaluate_depth_set_on_exercises(self):
+        """evaluate_depth from detector config is set on exercises."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockAnalyzer(evals)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+            evaluate_depth=1,
+        )
+        exercises = list(detector.generate_exercises(game))
+        for ex in exercises:
+            assert ex.evaluate_depth == 1
+
+    def test_evaluate_depth_none_by_default(self):
+        """Without evaluate_depth, exercises have None."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockAnalyzer(evals)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+        )
+        exercises = list(detector.generate_exercises(game))
+        for ex in exercises:
+            assert ex.evaluate_depth is None
+
+    def test_fallback_without_multipv_support(self):
+        """MockAnalyzer doesn't support multipv — acceptable_first_moves stays empty."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockAnalyzer(evals)  # No multipv support
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+            cp_tolerance=50,
+            multipv_count=3,
+        )
+        exercises = list(detector.generate_exercises(game))
+        for ex in exercises:
+            assert ex.acceptable_first_moves == []
+
+    def test_game_context_stored_in_metadata(self):
+        """game_context dict is stored in exercise metadata."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockAnalyzer(evals)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+        )
+        context = {
+            "game_date": "2026-01-15",
+            "opponent": "BobChess",
+            "time_control": "5+0",
+            "player_color": "white",
+        }
+        exercises = list(detector.generate_exercises(game, game_context=context))
+        for ex in exercises:
+            assert ex.metadata["game_context"] == context
+
+    def test_no_game_context_if_not_provided(self):
+        """Without game_context, metadata has no game_context key."""
+        game, evals = self._make_blunder_game()
+        analyzer = MockAnalyzer(evals)
+        detector = MistakeDetector(
+            analyzer,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+        )
+        exercises = list(detector.generate_exercises(game))
+        for ex in exercises:
+            assert "game_context" not in ex.metadata

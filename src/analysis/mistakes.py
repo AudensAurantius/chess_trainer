@@ -43,6 +43,23 @@ class PositionAnalyzer(Protocol):
         ...
 
 
+@runtime_checkable
+class MultiPVAnalyzer(Protocol):
+    """Protocol for analyzers that support multi-PV analysis."""
+
+    def analyze_multipv(self, board: chess.Board, multipv: int) -> list[PositionEval]:
+        """Analyze a position with multiple principal variations.
+
+        Args:
+            board: Position to analyze.
+            multipv: Number of lines to compute.
+
+        Returns:
+            List of PositionEval, one per line, ordered by score descending.
+        """
+        ...
+
+
 class EnginePositionAnalyzer:
     """Wraps EngineManager.analyze() to produce PositionEval objects.
 
@@ -73,6 +90,24 @@ class EnginePositionAnalyzer:
         pv = list(best_line.pv) if best_line and best_line.pv else []
 
         return PositionEval(score_cp=score_cp, best_move=best_move, pv=pv)
+
+    def analyze_multipv(self, board: chess.Board, multipv: int) -> list[PositionEval]:
+        """Analyze a position with multiple principal variations.
+
+        Args:
+            board: Position to analyze.
+            multipv: Number of lines to compute.
+
+        Returns:
+            List of PositionEval ordered by score descending.
+        """
+        result = self._engine.analyze(board, depth=self._depth, multipv=multipv)
+        evals = []
+        for line in result.lines:
+            best_move = line.pv[0] if line.pv else None
+            pv = list(line.pv) if line.pv else []
+            evals.append(PositionEval(score_cp=line.score_value, best_move=best_move, pv=pv))
+        return evals
 
 
 class LichessServerAnalyzer:
@@ -201,6 +236,9 @@ class MistakeDetector:
         min_classification: Minimum severity to include in exercises.
         max_exercises: Maximum exercises to generate per game.
         skip_first_plies: Number of opening plies to skip.
+        cp_tolerance: Centipawns within best to accept as alternative first move.
+        multipv_count: Number of multi-PV lines for acceptable move computation.
+        evaluate_depth: User moves to evaluate per exercise (1 = first move only).
     """
 
     def __init__(
@@ -210,12 +248,18 @@ class MistakeDetector:
         min_classification: MoveClassification = MoveClassification.MISTAKE,
         max_exercises: int = 10,
         skip_first_plies: int = 6,
+        cp_tolerance: int = 0,
+        multipv_count: int = 1,
+        evaluate_depth: int | None = None,
     ) -> None:
         """Initialize the detector with analysis parameters."""
         self._analyzer = analyzer
         self._min_classification = min_classification
         self._max_exercises = max_exercises
         self._skip_first_plies = skip_first_plies
+        self._cp_tolerance = cp_tolerance
+        self._multipv_count = multipv_count
+        self._evaluate_depth = evaluate_depth
 
     def analyze_game(
         self,
@@ -307,6 +351,37 @@ class MistakeDetector:
             source_url=source_url,
         )
 
+    def _compute_acceptable_moves(self, fen: str, best_score: int) -> tuple[list[str], int | None]:
+        """Compute acceptable first moves via multi-PV analysis.
+
+        Args:
+            fen: Position to analyze.
+            best_score: Best move's centipawn score from the single-PV eval.
+
+        Returns:
+            Tuple of (acceptable UCI move list, best move eval in cp).
+        """
+        if self._cp_tolerance <= 0 or self._multipv_count <= 1:
+            return [], best_score
+
+        if not isinstance(self._analyzer, MultiPVAnalyzer):
+            return [], best_score
+
+        board = chess.Board(fen)
+        multipv_evals = self._analyzer.analyze_multipv(board, self._multipv_count)
+        if not multipv_evals:
+            return [], best_score
+
+        top_score = multipv_evals[0].score_cp
+        acceptable = []
+        for ev in multipv_evals:
+            if ev.best_move is None:
+                continue
+            if abs(top_score - ev.score_cp) <= self._cp_tolerance:
+                acceptable.append(ev.best_move.uci())
+
+        return acceptable, top_score
+
     def generate_exercises(
         self,
         game: chess.pgn.Game,
@@ -314,6 +389,7 @@ class MistakeDetector:
         game_id: str | None = None,
         source_url: str | None = None,
         color: str | None = None,
+        game_context: dict | None = None,
     ) -> Iterator[TacticExercise]:
         """Analyze a game and generate exercises from mistakes.
 
@@ -322,6 +398,7 @@ class MistakeDetector:
             game_id: Override for the game identifier.
             source_url: URL to the game source.
             color: Only generate exercises for this color ("white" or "black").
+            game_context: Optional dict with game_date, opponent, time_control, player_color.
 
         Yields:
             TacticExercise objects for each qualifying mistake.
@@ -356,10 +433,25 @@ class MistakeDetector:
             if not solution:
                 continue
 
+            # Compute acceptable first moves via multi-PV
+            acceptable_moves, best_eval = self._compute_acceptable_moves(
+                am.fen_before, am.eval_before.score_cp
+            )
+
             # Build source URL with ply anchor
             ex_source_url = None
             if analysis.source_url:
                 ex_source_url = f"{analysis.source_url}#{am.ply}"
+
+            # Build metadata
+            metadata: dict = {
+                "cp_loss": am.cp_loss,
+                "score_before": am.eval_before.score_cp,
+                "score_after": am.eval_after.score_cp,
+                "played_move_uci": am.move.uci(),
+            }
+            if game_context:
+                metadata["game_context"] = game_context
 
             yield TacticExercise(
                 id=f"game:{analysis.game_id}:m{am.move_number}",
@@ -369,13 +461,11 @@ class MistakeDetector:
                 source_url=ex_source_url,
                 difficulty=None,
                 created_at=datetime.now(),
-                metadata={
-                    "cp_loss": am.cp_loss,
-                    "score_before": am.eval_before.score_cp,
-                    "score_after": am.eval_after.score_cp,
-                    "played_move_uci": am.move.uci(),
-                },
+                metadata=metadata,
                 solution=solution,
                 themes=[am.classification.name.lower(), "own_game"],
                 game_id=analysis.game_id,
+                acceptable_first_moves=acceptable_moves,
+                best_move_eval=best_eval,
+                evaluate_depth=self._evaluate_depth,
             )
