@@ -57,16 +57,15 @@ class TestRenderBoard:
         board = chess.Board()
         text = render_board(board)
         plain = text.plain
-        # White king symbol
+        # Both white and black use outline symbols; verify king symbol present
         assert PIECE_SYMBOLS[(chess.KING, chess.WHITE)] in plain
-        # Black king symbol
-        assert PIECE_SYMBOLS[(chess.KING, chess.BLACK)] in plain
 
     def test_flipped_reverses_ranks(self):
         board = chess.Board()
         normal = render_board(board, flipped=False).plain
         flipped = render_board(board, flipped=True).plain
         # In normal view rank 8 comes first; in flipped view rank 1 comes first
+        # Each rank now spans 2 lines, so first line is still the rank label
         normal_lines = normal.strip().split("\n")
         flipped_lines = flipped.strip().split("\n")
         assert normal_lines[0].strip().startswith("8")
