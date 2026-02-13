@@ -84,8 +84,9 @@ class TestImportGamesCommand:
         assert result.exit_code != 0
         assert "Invalid severity" in result.output
 
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_pgn_import_with_engine(self, mock_popen, tmp_path):
+    def test_pgn_import_with_engine(self, mock_popen, _mock_find, tmp_path):
         mock_popen.return_value = _make_mock_engine()
         pgn_file = tmp_path / "test.pgn"
         pgn_file.write_text(SIMPLE_PGN)
@@ -98,8 +99,9 @@ class TestImportGamesCommand:
         assert result.exit_code == 0
         assert "Import from Game Analysis" in result.output
 
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_pgn_with_color_filter(self, mock_popen, tmp_path):
+    def test_pgn_with_color_filter(self, mock_popen, _mock_find, tmp_path):
         mock_popen.return_value = _make_mock_engine()
         pgn_file = tmp_path / "test.pgn"
         pgn_file.write_text(SIMPLE_PGN)
@@ -119,8 +121,9 @@ class TestImportGamesCommand:
         )
         assert result.exit_code == 0
 
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_pgn_with_depth_and_max_exercises(self, mock_popen, tmp_path):
+    def test_pgn_with_depth_and_max_exercises(self, mock_popen, _mock_find, tmp_path):
         mock_popen.return_value = _make_mock_engine()
         pgn_file = tmp_path / "test.pgn"
         pgn_file.write_text(SIMPLE_PGN)
@@ -230,8 +233,9 @@ class TestAnalyzeGameCommand:
         assert result.exit_code != 0
         assert "Specify --pgn, --game-id (Lichess), or --chesscom-game" in result.output
 
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_analyze_pgn(self, mock_popen, tmp_path):
+    def test_analyze_pgn(self, mock_popen, _mock_find, tmp_path):
         mock_popen.return_value = _make_mock_engine()
         pgn_file = tmp_path / "test.pgn"
         pgn_file.write_text(SIMPLE_PGN)
@@ -250,8 +254,9 @@ class TestAnalyzeGameCommand:
         assert result.exit_code != 0
         assert "No games found" in result.output
 
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_analyze_with_color_filter(self, mock_popen, tmp_path):
+    def test_analyze_with_color_filter(self, mock_popen, _mock_find, tmp_path):
         mock_popen.return_value = _make_mock_engine()
         pgn_file = tmp_path / "test.pgn"
         pgn_file.write_text(SIMPLE_PGN)
@@ -260,8 +265,9 @@ class TestAnalyzeGameCommand:
         assert result.exit_code == 0
 
     @patch("src.lichess.api.get_game")
+    @patch("src.analysis.engine._find_engine", return_value="/usr/bin/stockfish")
     @patch("src.analysis.engine.chess.engine.SimpleEngine.popen_uci")
-    def test_analyze_by_game_id(self, mock_popen, mock_get_game):
+    def test_analyze_by_game_id(self, mock_popen, _mock_find, mock_get_game):
         mock_popen.return_value = _make_mock_engine()
         mock_get_game.return_value = {
             "id": "TestId",
