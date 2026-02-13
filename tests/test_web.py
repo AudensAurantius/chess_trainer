@@ -84,6 +84,15 @@ class TestPages:
         res = client.get("/train")
         assert 'rel="icon"' in res.text
 
+    def test_css_has_auth_styles(self, client):
+        """CSS must include auth page styles."""
+        res = client.get("/static/css/style.css")
+        assert ".auth-container" in res.text
+        assert ".auth-form" in res.text
+        assert ".form-group" in res.text
+        assert ".auth-error" in res.text
+        assert ".auth-link" in res.text
+
 
 class TestSessionAPI:
     def test_start_empty(self, client):
