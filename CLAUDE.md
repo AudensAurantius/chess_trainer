@@ -98,6 +98,11 @@ module-root = ""
 
 Web deps: `httpx` needed for FastAPI TestClient (in dev deps).
 
+## Decision Log
+
+[`DECISION_LOG.md`](DECISION_LOG.md) — significant design and architectural decisions with rationale.
+Update this when making decisions that affect the project's direction, storage model, or public API.
+
 ## Roadmap
 
 Active roadmap: `memory/roadmap-v3.md` in the Claude memory directory.
