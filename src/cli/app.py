@@ -140,6 +140,51 @@ def import_chesscom_puzzles(
                 console.print(f"  - {error}")
 
 
+@app.command("import-failed-puzzles")
+def import_failed_puzzles(
+    count: int = typer.Option(50, "--count", "-n", help="Maximum number of failed puzzles"),
+    since: str | None = typer.Option(
+        None,
+        "--since",
+        "-s",
+        help='Time horizon: "3 months", "30 days", "2025-01-01"',
+    ),
+    no_tag: bool = typer.Option(False, "--no-tag", help="Skip auto-tagging"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import puzzles you previously failed on Lichess.
+
+    Requires a Lichess API token with puzzle:read scope.
+    Set via LICHESS_TOKEN environment variable or config.
+    """
+    cfg = _get_config()
+
+    # Use config default horizon if --since not provided
+    effective_since = since or cfg.import_settings.failed_puzzle_default_horizon
+    auto_tag = cfg.import_settings.failed_puzzle_auto_tag and not no_tag
+
+    with get_repo(db) as repo:
+        importer = LichessPuzzleImporter()
+
+        with console.status(f"Importing failed puzzles from Lichess (since {effective_since})..."):
+            result = importer.import_to_failed(
+                repo.exercises,
+                count=count,
+                since=effective_since,
+                auto_tag=auto_tag,
+            )
+
+        console.print(f"\n[green]\u2713[/green] {result}")
+
+        if result.total_added > 0:
+            _sync_system_tags(repo, source="lichess")
+
+        if result.errors:
+            console.print("[yellow]Errors:[/yellow]")
+            for error in result.errors[:5]:
+                console.print(f"  - {error}")
+
+
 @app.command()
 def stats(
     db: Path | None = typer.Option(None, "--db", help="Database path"),
