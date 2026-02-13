@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Iterator
+from datetime import UTC
 
 import chess.pgn
 
@@ -153,9 +154,35 @@ class ChessComGameImporter(Importer):
                 evaluate_depth=self._evaluate_depth,
             )
 
+            # Build game context from Chess.com game object
+            game_context = self._build_context(game_obj, user_color)
+
             yield from detector.generate_exercises(
                 game,
                 game_id=f"chesscom:{game_obj.game_id}",
                 source_url=game_obj.url,
                 color=analysis_color,
+                game_context=game_context or None,
             )
+
+    @staticmethod
+    def _build_context(game_obj: ChessComGame, user_color: str | None) -> dict:
+        """Build game_context dict from a ChessComGame object."""
+        context: dict = {}
+
+        if game_obj.end_time:
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(game_obj.end_time, tz=UTC)
+            context["game_date"] = dt.strftime("%Y-%m-%d")
+
+        if game_obj.time_class:
+            context["time_control"] = game_obj.time_class
+
+        if user_color:
+            context["player_color"] = user_color
+            opponent = game_obj.black.username if user_color == "white" else game_obj.white.username
+            if opponent:
+                context["opponent"] = opponent
+
+        return context

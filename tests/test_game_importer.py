@@ -406,3 +406,131 @@ class TestExtractLichessEvals:
         evals = importer._extract_lichess_evals(game_data)
         assert evals[1] == {"cp": 20}
         assert evals[2] == {"cp": -15}
+
+
+# ---------------------------------------------------------------------------
+# Game context tests
+# ---------------------------------------------------------------------------
+
+PGN_WITH_HEADERS = """[Event "Rated Blitz"]
+[Site "https://lichess.org/AbCdEfGh"]
+[Date "2026.01.15"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+[TimeControl "300+0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0"""
+
+
+class TestGameContextPgn:
+    """Tests for game context extraction from PGN headers."""
+
+    def test_build_pgn_context_with_color(self):
+        import io
+
+        game = chess.pgn.read_game(io.StringIO(PGN_WITH_HEADERS))
+        context = GameImporter._build_pgn_context(game, "white")
+        assert context["game_date"] == "2026.01.15"
+        assert context["time_control"] == "300+0"
+        assert context["player_color"] == "white"
+        assert context["opponent"] == "Bob"
+
+    def test_build_pgn_context_black(self):
+        import io
+
+        game = chess.pgn.read_game(io.StringIO(PGN_WITH_HEADERS))
+        context = GameImporter._build_pgn_context(game, "black")
+        assert context["player_color"] == "black"
+        assert context["opponent"] == "Alice"
+
+    def test_build_pgn_context_no_color(self):
+        import io
+
+        game = chess.pgn.read_game(io.StringIO(PGN_WITH_HEADERS))
+        context = GameImporter._build_pgn_context(game, None)
+        assert "opponent" not in context
+        assert "player_color" not in context
+        assert context["game_date"] == "2026.01.15"
+
+    def test_build_pgn_context_missing_date(self):
+        import io
+
+        pgn = '[Event "?"]\n[Result "*"]\n\n1. e4 *'
+        game = chess.pgn.read_game(io.StringIO(pgn))
+        context = GameImporter._build_pgn_context(game, None)
+        assert "game_date" not in context
+
+    def test_build_pgn_context_unknown_date(self):
+        import io
+
+        pgn = '[Event "?"]\n[Date "????.??.??"]\n[Result "*"]\n\n1. e4 *'
+        game = chess.pgn.read_game(io.StringIO(pgn))
+        context = GameImporter._build_pgn_context(game, None)
+        assert "game_date" not in context
+
+    def test_fetch_pgn_passes_context_to_exercises(self, tmp_path):
+        """PGN fetch should pass game context to exercises."""
+        pgn_file = tmp_path / "test.pgn"
+        pgn_file.write_text(PGN_WITH_HEADERS)
+
+        mock_engine = MagicMock(spec=EngineManager)
+        best_move = chess.Move.from_uci("d2d4")
+        call_count = [0]
+
+        def analyze_side_effect(board, *, depth=20, multipv=1):
+            result = MagicMock()
+            idx = call_count[0]
+            call_count[0] += 1
+            if idx == 2:
+                result.evaluation = 200
+                line = MagicMock()
+                line.pv = [best_move, chess.Move.from_uci("d7d5")]
+                result.best_line = line
+            elif idx == 3:
+                result.evaluation = 50
+                line = MagicMock()
+                line.pv = []
+                result.best_line = line
+            else:
+                result.evaluation = 20
+                line = MagicMock()
+                line.pv = [chess.Move.from_uci("e2e4")]
+                result.best_line = line
+            return result
+
+        mock_engine.analyze.side_effect = analyze_side_effect
+
+        importer = GameImporter(
+            mock_engine,
+            min_classification=MoveClassification.MISTAKE,
+            skip_first_plies=0,
+        )
+        exercises = list(importer.fetch(pgn_path=pgn_file, color="white"))
+        assert len(exercises) >= 1
+        for ex in exercises:
+            ctx = ex.metadata.get("game_context")
+            assert ctx is not None
+            assert ctx["game_date"] == "2026.01.15"
+            assert ctx["player_color"] == "white"
+            assert ctx["opponent"] == "Bob"
+
+
+class TestGameContextImporterParams:
+    """Tests for new config params on GameImporter."""
+
+    def test_default_new_params(self):
+        importer = GameImporter()
+        assert importer._cp_tolerance == 0
+        assert importer._multipv_count == 1
+        assert importer._evaluate_depth is None
+
+    def test_custom_new_params(self):
+        importer = GameImporter(
+            cp_tolerance=50,
+            multipv_count=3,
+            evaluate_depth=1,
+        )
+        assert importer._cp_tolerance == 50
+        assert importer._multipv_count == 3
+        assert importer._evaluate_depth == 1

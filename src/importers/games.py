@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Iterator
+from datetime import UTC
 from pathlib import Path
 
 import chess.pgn
@@ -153,6 +154,37 @@ class GameImporter(Importer):
             evaluate_depth=self._evaluate_depth,
         )
 
+    @staticmethod
+    def _build_pgn_context(game: chess.pgn.Game, color: str | None) -> dict:
+        """Build game_context dict from PGN headers.
+
+        Args:
+            game: Parsed PGN game.
+            color: Player's color ("white" or "black"), if known.
+
+        Returns:
+            Dict with game_date, opponent, time_control, player_color.
+        """
+        headers = game.headers
+        context: dict = {}
+
+        date = headers.get("Date", headers.get("UTCDate"))
+        if date and date != "????.??.??":
+            context["game_date"] = date
+
+        time_control = headers.get("TimeControl")
+        if time_control:
+            context["time_control"] = time_control
+
+        if color:
+            context["player_color"] = color
+            opponent_key = "Black" if color == "white" else "White"
+            opponent = headers.get(opponent_key)
+            if opponent and opponent != "?":
+                context["opponent"] = opponent
+
+        return context
+
     def _fetch_pgn(
         self,
         pgn_path: str | Path,
@@ -169,7 +201,8 @@ class GameImporter(Importer):
         detector = self._make_detector(analyzer)
 
         for game in games:
-            yield from detector.generate_exercises(game, color=color)
+            context = self._build_pgn_context(game, color) or None
+            yield from detector.generate_exercises(game, color=color, game_context=context)
 
     def _fetch_lichess(
         self,
@@ -218,11 +251,36 @@ class GameImporter(Importer):
 
             detector = self._make_detector(analyzer)
 
+            # Build game context from Lichess JSON + PGN
+            user_color = color
+            if not user_color:
+                players = game_data.get("players", {})
+                for c in ("white", "black"):
+                    user = players.get(c, {}).get("user", {})
+                    if user.get("name", "").lower() == username.lower():
+                        user_color = c
+                        break
+
+            context = self._build_pgn_context(game, user_color)
+            # Supplement with Lichess-specific data
+            if "clock" in game_data:
+                clock = game_data["clock"]
+                initial = clock.get("initial", 0)
+                increment = clock.get("increment", 0)
+                context["time_control"] = f"{initial // 60}+{increment}"
+            if "lastMoveAt" in game_data:
+                from datetime import datetime
+
+                ts = game_data["lastMoveAt"] / 1000
+                dt = datetime.fromtimestamp(ts, tz=UTC)
+                context["game_date"] = dt.strftime("%Y-%m-%d")
+
             yield from detector.generate_exercises(
                 game,
                 game_id=game_id,
                 source_url=source_url,
                 color=color,
+                game_context=context or None,
             )
 
     def _extract_lichess_evals(self, game_data: dict) -> list[dict | None]:
