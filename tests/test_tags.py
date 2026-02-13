@@ -586,9 +586,7 @@ class TestTrainWithTags:
             repo.tags.add_tags(EntityType.EXERCISE, "ex:001", ["study"])
 
         # Provide enough input for: move prompt (empty=give up) + rating override + continue prompt
-        result = runner.invoke(
-            app, ["train", "--tag", "study", "--db", str(db)], input="\n\nn\n"
-        )
+        result = runner.invoke(app, ["train", "--tag", "study", "--db", str(db)], input="\n\nn\n")
         assert result.exit_code == 0
         assert "1 cards" in result.output  # Only 1 card matched
 
@@ -601,9 +599,7 @@ class TestTrainWithTags:
             repo.tags.add_tags(EntityType.EXERCISE, "ex:002", ["skip"])
             repo.tags.add_tags(EntityType.EXERCISE, "ex:003", ["skip"])
 
-        result = runner.invoke(
-            app, ["train", "--exclude-tag", "skip", "--db", str(db)], input="\n"
-        )
+        result = runner.invoke(app, ["train", "--exclude-tag", "skip", "--db", str(db)], input="\n")
         assert result.exit_code == 0
         assert "No cards due" in result.output  # All excluded
 
@@ -613,9 +609,7 @@ class TestTrainWithTags:
         with Repository(db) as repo:
             _seed_exercises(repo)
 
-        result = runner.invoke(
-            app, ["train", "--tag", "nonexistent", "--db", str(db)], input="\n"
-        )
+        result = runner.invoke(app, ["train", "--tag", "nonexistent", "--db", str(db)], input="\n")
         assert result.exit_code == 0
         assert "No cards due" in result.output
 

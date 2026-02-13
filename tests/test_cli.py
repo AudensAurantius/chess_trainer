@@ -540,9 +540,7 @@ class TestConfigInitInteractive:
             patch("src.cli.app.DEFAULT_CONFIG_PATH", config_path),
             patch("src.config.DEFAULT_CONFIG_PATH", config_path),
         ):
-            result = runner.invoke(
-                app, ["config", "init", "--interactive"], input="\n\n\n\n\n"
-            )
+            result = runner.invoke(app, ["config", "init", "--interactive"], input="\n\n\n\n\n")
         assert result.exit_code == 0
         assert "Setup complete" in result.output
         assert config_path.exists()

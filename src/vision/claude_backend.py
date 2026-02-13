@@ -107,8 +107,7 @@ class ClaudeVisionBackend(VisionBackend):
             chess.Board(fen)
         except ValueError:
             raise VisionError(
-                f"Claude returned invalid FEN: {fen!r}. "
-                "The position could not be parsed."
+                f"Claude returned invalid FEN: {fen!r}. The position could not be parsed."
             )
 
         return VisionResult(fen=fen, confidence=0.85, backend="claude")

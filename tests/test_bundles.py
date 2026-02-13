@@ -67,7 +67,11 @@ def _make_bundle(
 ) -> ExerciseBundle:
     config = BundleConfig(
         woodpecker_mode=woodpecker,
-        **{k: v for k, v in kwargs.items() if k in ("pass_threshold", "shuffle", "time_limit_seconds")},
+        **{
+            k: v
+            for k, v in kwargs.items()
+            if k in ("pass_threshold", "shuffle", "time_limit_seconds")
+        },
     )
     if woodpecker and "woodpecker_cycles" not in kwargs:
         config.woodpecker_cycles = [
@@ -773,9 +777,7 @@ class TestBundleCLIAddRemove:
     def test_add_exercises(self, tmp_path):
         db = str(tmp_path / "test.db")
         runner.invoke(app, ["bundle", "create", "add-test", "--db", db])
-        result = runner.invoke(
-            app, ["bundle", "add", "add-test", "ex:001", "ex:002", "--db", db]
-        )
+        result = runner.invoke(app, ["bundle", "add", "add-test", "ex:001", "ex:002", "--db", db])
         assert result.exit_code == 0
         assert "Added 2" in result.output
 
@@ -788,9 +790,7 @@ class TestBundleCLIAddRemove:
         assert "Removed 1" in result.output
 
     def test_add_nonexistent_bundle(self):
-        result = runner.invoke(
-            app, ["bundle", "add", "nope", "ex:001", "--db", ":memory:"]
-        )
+        result = runner.invoke(app, ["bundle", "add", "nope", "ex:001", "--db", ":memory:"])
         assert result.exit_code == 1
         assert "not found" in result.output
 
@@ -804,9 +804,7 @@ class TestBundleCLIDelete:
         assert "Deleted" in result.output
 
     def test_delete_not_found(self):
-        result = runner.invoke(
-            app, ["bundle", "delete", "nope", "--force", "--db", ":memory:"]
-        )
+        result = runner.invoke(app, ["bundle", "delete", "nope", "--force", "--db", ":memory:"])
         assert result.exit_code == 1
 
 
@@ -819,12 +817,11 @@ class TestBundleCLIImport:
         with Repository(db) as repo:
             exercises = _seed_exercises(repo, 3)
             from src.storage.tag_store import EntityType, TagSource
+
             for ex in exercises:
                 repo.tags.add_tags(EntityType.EXERCISE, ex.id, ex.tags, TagSource.SYSTEM)
         # Import by tag
-        result = runner.invoke(
-            app, ["bundle", "import", "imp-test", "--tag", "fork", "--db", db]
-        )
+        result = runner.invoke(app, ["bundle", "import", "imp-test", "--tag", "fork", "--db", db])
         assert result.exit_code == 0
         assert "Added" in result.output
 
@@ -870,9 +867,7 @@ class TestBundleCLIReset:
         db = str(tmp_path / "test.db")
         runner.invoke(app, ["bundle", "create", "rst-test", "--db", db])
         with Repository(db) as repo:
-            repo.bundles.save_progress(
-                BundleProgress(bundle_id="bundle:rst-test", current_cycle=3)
-            )
+            repo.bundles.save_progress(BundleProgress(bundle_id="bundle:rst-test", current_cycle=3))
         result = runner.invoke(app, ["bundle", "reset", "rst-test", "--force", "--db", db])
         assert result.exit_code == 0
         assert "Reset" in result.output
@@ -900,28 +895,30 @@ class TestBundleCLITrain:
 class TestBundlesConfig:
     def test_default_config(self):
         from src.config import AppConfig
+
         config = AppConfig()
         assert config.bundles.default_pass_threshold == 0.9
         assert config.bundles.default_shuffle is False
 
     def test_config_from_toml(self, tmp_path):
         from src.config import load_config
+
         config_path = tmp_path / "config.toml"
-        config_path.write_text(
-            "[bundles]\ndefault_pass_threshold = 0.75\ndefault_shuffle = true\n"
-        )
+        config_path.write_text("[bundles]\ndefault_pass_threshold = 0.75\ndefault_shuffle = true\n")
         config = load_config(config_path)
         assert config.bundles.default_pass_threshold == 0.75
         assert config.bundles.default_shuffle is True
 
     def test_config_validation_range(self):
         from src.config import _validate_value
+
         _validate_value("bundles.default_pass_threshold", 0.5)  # OK
         with pytest.raises(ValueError):
             _validate_value("bundles.default_pass_threshold", 1.5)
 
     def test_config_in_default_config(self):
         from src.config import generate_default_config
+
         text = generate_default_config()
         assert "bundles" in text
         assert "default_pass_threshold" in text
@@ -943,6 +940,7 @@ class TestBundleWeb:
         config.database.path = ":memory:"
         web_app = create_app(config)
         from starlette.testclient import TestClient
+
         client = TestClient(web_app)
         return client
 

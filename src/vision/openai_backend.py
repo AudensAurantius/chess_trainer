@@ -64,8 +64,7 @@ class OpenAIVisionBackend(VisionBackend):
             import openai
         except ImportError:
             raise VisionError(
-                "openai SDK not installed. "
-                "Install with: pip install chess-trainer[vision-openai]"
+                "openai SDK not installed. Install with: pip install chess-trainer[vision-openai]"
             )
 
         if not image_path.is_file():
@@ -104,8 +103,7 @@ class OpenAIVisionBackend(VisionBackend):
             chess.Board(fen)
         except ValueError:
             raise VisionError(
-                f"OpenAI returned invalid FEN: {fen!r}. "
-                "The position could not be parsed."
+                f"OpenAI returned invalid FEN: {fen!r}. The position could not be parsed."
             )
 
         return VisionResult(fen=fen, confidence=0.80, backend="openai")

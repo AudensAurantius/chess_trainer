@@ -147,9 +147,7 @@ class TestClaudeBackend:
 
         # Mock the anthropic module
         mock_anthropic = MagicMock()
-        mock_response = SimpleNamespace(
-            content=[SimpleNamespace(text=STARTING_FEN)]
-        )
+        mock_response = SimpleNamespace(content=[SimpleNamespace(text=STARTING_FEN)])
         mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
 
         b = ClaudeVisionBackend(api_key="sk-ant-test")
@@ -165,9 +163,7 @@ class TestClaudeBackend:
         img.write_bytes(b"\x89PNG\r\n\x1a\n")
 
         mock_anthropic = MagicMock()
-        mock_response = SimpleNamespace(
-            content=[SimpleNamespace(text="not a valid fen")]
-        )
+        mock_response = SimpleNamespace(content=[SimpleNamespace(text="not a valid fen")])
         mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_response
 
         b = ClaudeVisionBackend(api_key="sk-ant-test")
@@ -229,9 +225,7 @@ class TestOpenAIBackend:
         img.write_bytes(b"\x89PNG\r\n\x1a\n")
 
         mock_openai = MagicMock()
-        mock_choice = SimpleNamespace(
-            message=SimpleNamespace(content=STARTING_FEN)
-        )
+        mock_choice = SimpleNamespace(message=SimpleNamespace(content=STARTING_FEN))
         mock_response = SimpleNamespace(choices=[mock_choice])
         mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_response
 
@@ -248,9 +242,7 @@ class TestOpenAIBackend:
         img.write_bytes(b"\x89PNG\r\n\x1a\n")
 
         mock_openai = MagicMock()
-        mock_choice = SimpleNamespace(
-            message=SimpleNamespace(content="garbage")
-        )
+        mock_choice = SimpleNamespace(message=SimpleNamespace(content="garbage"))
         mock_response = SimpleNamespace(choices=[mock_choice])
         mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_response
 

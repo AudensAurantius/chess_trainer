@@ -81,14 +81,12 @@ def get_backend(config) -> VisionBackend:
         backend = LocalVisionBackend(model_path=config.experimental.local_model_path)
     else:
         raise VisionError(
-            f"Unknown vision backend: {backend_name!r}. "
-            "Use 'claude', 'openai', or 'local'."
+            f"Unknown vision backend: {backend_name!r}. Use 'claude', 'openai', or 'local'."
         )
 
     if not backend.is_available():
         raise VisionError(
-            f"Vision backend {backend_name!r} is not available. "
-            f"{_install_hint(backend_name)}"
+            f"Vision backend {backend_name!r} is not available. {_install_hint(backend_name)}"
         )
 
     return backend

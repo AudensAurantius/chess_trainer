@@ -1320,9 +1320,7 @@ class TestFilterMoves:
     def test_combined_thresholds_and_logic(self):
         result = _make_result(FILTER_MOVES)
         # White >= 35% AND draw <= 30%
-        filtered = filter_moves(
-            result, ExplorerFilter(min_white_pct=35.0, max_draw_pct=30.0)
-        )
+        filtered = filter_moves(result, ExplorerFilter(min_white_pct=35.0, max_draw_pct=30.0))
         ucis = [m.uci for m in filtered.moves]
         # e4: white=60%, draw=20% → pass; d4: white=40%, draw=40% → fail draw
         assert ucis == ["e2e4"]
@@ -1404,9 +1402,7 @@ class TestGetRepertoireMoves:
 
     def test_no_lines_reach_position(self, repo):
         # Book has only 1.e4, but we're querying a position after 1.d4 d5
-        repo.openings.add_line(
-            OpeningLine(id="book:rep3", color=BookColor.WHITE, moves=["e2e4"])
-        )
+        repo.openings.add_line(OpeningLine(id="book:rep3", color=BookColor.WHITE, moves=["e2e4"]))
         board = chess.Board()
         board.push_uci("d2d4")
         board.push_uci("d7d5")
@@ -1453,9 +1449,7 @@ class TestGetRepertoireMoves:
         assert "e2e4" in info.book_moves
 
     def test_empty_explorer_moves(self, repo):
-        repo.openings.add_line(
-            OpeningLine(id="book:rep6", color=BookColor.WHITE, moves=["e2e4"])
-        )
+        repo.openings.add_line(OpeningLine(id="book:rep6", color=BookColor.WHITE, moves=["e2e4"]))
         info = get_repertoire_moves(chess.STARTING_FEN, [], repo.openings)
         assert info.total_moves == 0
         assert info.coverage == 0.0
@@ -1463,12 +1457,8 @@ class TestGetRepertoireMoves:
         assert "e2e4" in info.book_moves
 
     def test_coverage_calculation(self, repo):
-        repo.openings.add_line(
-            OpeningLine(id="book:rep7a", color=BookColor.WHITE, moves=["e2e4"])
-        )
-        repo.openings.add_line(
-            OpeningLine(id="book:rep7b", color=BookColor.WHITE, moves=["d2d4"])
-        )
+        repo.openings.add_line(OpeningLine(id="book:rep7a", color=BookColor.WHITE, moves=["e2e4"]))
+        repo.openings.add_line(OpeningLine(id="book:rep7b", color=BookColor.WHITE, moves=["d2d4"]))
         moves = [
             MoveStats(uci="e2e4", san="e4", white_wins=10, draws=5, black_wins=5),
             MoveStats(uci="d2d4", san="d4", white_wins=8, draws=4, black_wins=3),
@@ -1557,9 +1547,7 @@ class TestExploreCommandFilters:
     @patch("src.cli.app._interactive_explore")
     def test_speeds_parsed(self, mock_explore, tmp_path):
         db_path = tmp_path / "test.db"
-        result = runner.invoke(
-            app, ["explore", "--speeds", "blitz,rapid", "--db", str(db_path)]
-        )
+        result = runner.invoke(app, ["explore", "--speeds", "blitz,rapid", "--db", str(db_path)])
         assert result.exit_code == 0
         _, kwargs = mock_explore.call_args
         filt = kwargs["explorer_filter"]
@@ -1581,9 +1569,7 @@ class TestExploreCommandFilters:
     @patch("src.cli.app._interactive_explore")
     def test_min_white_pct_flows_through(self, mock_explore, tmp_path):
         db_path = tmp_path / "test.db"
-        result = runner.invoke(
-            app, ["explore", "--min-white-pct", "45.5", "--db", str(db_path)]
-        )
+        result = runner.invoke(app, ["explore", "--min-white-pct", "45.5", "--db", str(db_path)])
         assert result.exit_code == 0
         _, kwargs = mock_explore.call_args
         filt = kwargs["explorer_filter"]
@@ -1593,9 +1579,7 @@ class TestExploreCommandFilters:
     @patch("src.cli.app._interactive_explore")
     def test_repertoire_flag(self, mock_explore, tmp_path):
         db_path = tmp_path / "test.db"
-        result = runner.invoke(
-            app, ["explore", "--repertoire", "--db", str(db_path)]
-        )
+        result = runner.invoke(app, ["explore", "--repertoire", "--db", str(db_path)])
         assert result.exit_code == 0
         _, kwargs = mock_explore.call_args
         filt = kwargs["explorer_filter"]

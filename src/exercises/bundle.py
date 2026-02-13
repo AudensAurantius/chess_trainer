@@ -250,7 +250,5 @@ class BundleProgress:
             else None,
             exercises_attempted=data.get("exercises_attempted", 0),
             exercises_correct=data.get("exercises_correct", 0),
-            completed_cycles=[
-                CycleResult.from_dict(c) for c in data.get("completed_cycles", [])
-            ],
+            completed_cycles=[CycleResult.from_dict(c) for c in data.get("completed_cycles", [])],
         )

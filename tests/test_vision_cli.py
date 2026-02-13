@@ -148,9 +148,7 @@ class TestScanSuccess:
             patch("src.cli.app._get_config", return_value=cfg),
             patch("src.vision.get_backend", return_value=mock_backend),
         ):
-            result = runner.invoke(
-                app, ["scan", str(img), "--backend", "openai"], input="y\n"
-            )
+            result = runner.invoke(app, ["scan", str(img), "--backend", "openai"], input="y\n")
 
         assert result.exit_code == 0
         assert "openai" in result.output

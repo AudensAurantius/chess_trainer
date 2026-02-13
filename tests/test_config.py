@@ -360,7 +360,7 @@ class TestSetConfigValue:
 
     def test_preserves_other_sections(self, tmp_path):
         path = tmp_path / "config.toml"
-        path.write_text('[web]\nport = 8000\n\n[training]\nmax_new_cards = 20\n')
+        path.write_text("[web]\nport = 8000\n\n[training]\nmax_new_cards = 20\n")
         set_config_value("web.port", "9000", config_path=path)
         data = tomllib.loads(path.read_text())
         assert data["web"]["port"] == 9000
@@ -408,7 +408,7 @@ class TestResetConfigValue:
 
     def test_reset_all(self, tmp_path):
         path = tmp_path / "config.toml"
-        path.write_text('[web]\nport = 9000\n')
+        path.write_text("[web]\nport = 9000\n")
         reset_config_value(config_path=path)
         content = path.read_text()
         # Should be the full default template
@@ -432,7 +432,7 @@ class TestResetConfigValue:
     def test_reset_nonexistent_key_in_file(self, tmp_path):
         """Resetting a key that's valid but not in the file should not error."""
         path = tmp_path / "config.toml"
-        path.write_text('[training]\nmax_new_cards = 20\n')
+        path.write_text("[training]\nmax_new_cards = 20\n")
         reset_config_value("web.port", config_path=path)
         data = tomllib.loads(path.read_text())
         assert data["training"]["max_new_cards"] == 20
@@ -483,7 +483,7 @@ class TestFilePermissions:
 
     def test_load_config_warns_on_open_permissions(self, tmp_path):
         path = tmp_path / "config.toml"
-        path.write_text('[web]\nport = 9000\n')
+        path.write_text("[web]\nport = 9000\n")
         path.chmod(0o644)
         with pytest.warns(UserWarning, match="overly permissive"):
             config = load_config(path)
@@ -578,10 +578,13 @@ class TestExperimentalApplyToml:
 
     def test_apply_experimental_preserves_other_sections(self):
         cfg = AppConfig()
-        _apply_toml(cfg, {
-            "web": {"port": 9000},
-            "experimental": {"enabled": True},
-        })
+        _apply_toml(
+            cfg,
+            {
+                "web": {"port": 9000},
+                "experimental": {"enabled": True},
+            },
+        )
         assert cfg.web.port == 9000
         assert cfg.experimental.enabled is True
 
