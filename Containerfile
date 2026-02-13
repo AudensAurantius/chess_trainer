@@ -12,9 +12,10 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies (no dev, web extras only)
 RUN uv sync --frozen --no-dev --extra web --no-install-project
 
-# Copy application source and assets
+# Copy application source, assets, and README (needed by uv_build)
 COPY src/ src/
 COPY assets/ assets/
+COPY README.md ./
 
 # Install the project itself
 RUN uv sync --frozen --no-dev --extra web
