@@ -90,6 +90,7 @@ class SessionManager:
         max_new: int | None = None,
         max_reviews: int | None = None,
         include_tags: list[str] | None = None,
+        adapt_difficulty: bool | None = None,
     ) -> int:
         """Start a new training session.
 
@@ -97,6 +98,7 @@ class SessionManager:
             max_new: Override max new cards (uses config default if None).
             max_reviews: Override max reviews (uses config default if None).
             include_tags: Optional list of tags to filter exercises by.
+            adapt_difficulty: Override difficulty adaptation (uses config default if None).
 
         Returns:
             Number of cards in the queue.
@@ -111,6 +113,20 @@ class SessionManager:
             interleave_new=self.config.training.interleave_new,
             include_tags=include_tags,
         )
+
+        # Apply difficulty adaptation if enabled
+        should_adapt = (
+            adapt_difficulty if adapt_difficulty is not None else (self.config.difficulty.enabled)
+        )
+        if should_adapt:
+            from ..training.difficulty import DifficultyAdapter
+
+            adapter = DifficultyAdapter(repo.conn, self.config.difficulty)
+            difficulty_range = adapter.compute_range()
+            if difficulty_range is not None:
+                session_config.min_difficulty = difficulty_range.min_difficulty
+                session_config.max_difficulty = difficulty_range.max_difficulty
+
         self._session = TrainingSession(repo, session_config)
         self._session.start()
         return self._session.remaining
