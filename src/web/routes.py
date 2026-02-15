@@ -75,6 +75,22 @@ async def api_import_lichess(request: Request):
     return JSONResponse(result)
 
 
+@router.post("/api/import/chesscom")
+async def api_import_chesscom(request: Request):
+    """Import puzzles from Chess.com."""
+    manager = _manager(request)
+    body = await request.json()
+    count = min(int(body.get("count", 20)), 100)
+    include_daily = body.get("include_daily", True)
+
+    try:
+        result = manager.import_chesscom_puzzles(count=count, include_daily=include_daily)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
+
+
 @router.post("/api/session/start")
 async def api_session_start(request: Request):
     """Start a new training session."""

@@ -406,6 +406,50 @@ class SessionManager:
             "cards_created": cards_created,
         }
 
+    def import_chesscom_puzzles(
+        self,
+        count: int = 20,
+        include_daily: bool = True,
+    ) -> dict:
+        """Import puzzles from Chess.com, create cards, and sync tags.
+
+        Args:
+            count: Number of puzzles to fetch (max 100).
+            include_daily: Whether to include the daily puzzle.
+
+        Returns:
+            Dict with added, skipped, errors, cards_created counts.
+        """
+        from ..importers.chesscom_puzzles import ChessComPuzzleImporter
+        from ..storage.tag_store import EntityType, TagSource
+
+        count = min(count, 100)
+        repo = self._open_repo()
+        importer = ChessComPuzzleImporter()
+        result = importer.import_to(
+            repo.exercises,
+            count=count,
+            include_daily=include_daily,
+        )
+
+        # Create review cards for newly imported exercises
+        cards_created = 0
+        for exercise in repo.exercises.search(source="chesscom"):
+            card = repo.cards.get_or_create(exercise.id)
+            if card.reps == 0:
+                cards_created += 1
+            if exercise.tags:
+                repo.tags.add_tags(
+                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
+                )
+
+        return {
+            "added": result.total_added,
+            "skipped": result.total_skipped,
+            "errors": len(result.errors),
+            "cards_created": cards_created,
+        }
+
     # ── Bundle session support ─────────────────────────────────────────────
 
     def list_bundles(self) -> list[dict]:
