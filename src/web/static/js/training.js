@@ -5,6 +5,7 @@ let game = null;
 let playerColor = 'white';
 let exerciseActive = false;
 let awaitingRating = false;
+let hasPlayedMove = false;
 
 // ─── Session control ───────────────────────────────────────────────
 
@@ -68,9 +69,12 @@ async function endSession() {
 async function loadNextExercise() {
     exerciseActive = false;
     awaitingRating = false;
+    hasPlayedMove = false;
     hideFeedback();
+    clearHighlightSquares();
     document.getElementById('rating-panel').style.display = 'none';
     document.getElementById('controls').style.display = 'flex';
+    document.getElementById('my-move-btn').style.display = 'none';
 
     try {
         const res = await fetch('/api/session/next');
@@ -100,6 +104,12 @@ async function loadNextExercise() {
             contextEl.style.display = 'block';
         } else {
             contextEl.style.display = 'none';
+        }
+
+        // Show "What did I play?" button for own-game exercises
+        hasPlayedMove = !!data.has_played_move;
+        if (hasPlayedMove) {
+            document.getElementById('my-move-btn').style.display = 'inline-block';
         }
 
         // Determine player color from side to move
@@ -343,6 +353,49 @@ function showSessionComplete(stats) {
         </div>
     `;
     document.getElementById('session-stats').innerHTML = statsHtml;
+}
+
+// ─── "Show My Move" hint ──────────────────────────────────────────
+
+async function showMyMove() {
+    if (!exerciseActive || !hasPlayedMove) return;
+
+    try {
+        const res = await fetch('/api/session/my-move');
+        if (!res.ok) {
+            console.error('Get played move failed:', res.status);
+            return;
+        }
+        const data = await res.json();
+
+        // Highlight from/to squares in red/orange
+        highlightSquares(data.from, data.to);
+        showFeedback('Your move was: ' + data.played_move_san, 'hint');
+
+        // Disable the button after use
+        document.getElementById('my-move-btn').disabled = true;
+    } catch (error) {
+        console.error('Error getting played move:', error);
+    }
+}
+
+function highlightSquares(fromSq, toSq) {
+    clearHighlightSquares();
+    const boardEl = document.getElementById('board');
+    if (!boardEl) return;
+
+    const squares = [fromSq, toSq];
+    squares.forEach(sq => {
+        const el = boardEl.querySelector('.square-' + sq);
+        if (el) {
+            el.classList.add('highlight-played-move');
+        }
+    });
+}
+
+function clearHighlightSquares() {
+    const highlighted = document.querySelectorAll('.highlight-played-move');
+    highlighted.forEach(el => el.classList.remove('highlight-played-move'));
 }
 
 // ─── UI helpers ────────────────────────────────────────────────────

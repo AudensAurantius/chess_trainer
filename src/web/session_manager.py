@@ -24,6 +24,7 @@ class ExerciseState:
     move_index: int = 0
     board: chess.Board = field(default=None, repr=False)
     submitted: bool = False
+    used_my_move_hint: bool = False
 
     def __post_init__(self) -> None:
         """Initialize the working board from FEN."""
@@ -254,6 +255,12 @@ class SessionManager:
             state.submitted = True
             user_moves = [solution[i] for i in user_move_indices[:effective_user_moves]]
             result, _ = self._session.submit(user_moves, 0)
+
+            # Apply "show my move" penalty: demote correct → partial
+            if state.used_my_move_hint and result.correct:
+                self._session.stats.correct -= 1
+                self._session.stats.partial += 1
+
             return {
                 "valid": True,
                 "correct": True,
@@ -334,6 +341,38 @@ class SessionManager:
             "explanation": ex.get_explanation(),
             "solution_uci": [m.uci() for m in solution],
             "final_fen": board.fen(),
+        }
+
+    def get_played_move(self) -> dict | None:
+        """Get the user's original played move for own-game exercises.
+
+        Returns the move from ``played_move_uci`` in exercise metadata, or
+        ``None`` if unavailable. Marks the exercise state so a scoring
+        penalty is applied on submit.
+        """
+        if not self._exercise_state:
+            return None
+        ex = self._exercise_state.exercise
+        played_uci = ex.metadata.get("played_move_uci")
+        if not played_uci:
+            return None
+
+        # Mark the hint as used (scoring penalty applied on submit)
+        self._exercise_state.used_my_move_hint = True
+
+        # Build SAN and from/to for UI highlighting
+        board = chess.Board(ex.fen)
+        try:
+            move = chess.Move.from_uci(played_uci)
+            played_san = board.san(move)
+        except (chess.InvalidMoveError, ValueError):
+            played_san = played_uci
+
+        return {
+            "played_move_uci": played_uci,
+            "played_move_san": played_san,
+            "from": played_uci[:2],
+            "to": played_uci[2:4],
         }
 
     def end_session(self) -> SessionStats | None:
