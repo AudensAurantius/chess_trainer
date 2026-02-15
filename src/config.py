@@ -63,6 +63,10 @@ class LoggingConfig:
     """Logging settings."""
 
     level: str = "INFO"
+    file: str | None = None
+    format: str = "text"  # "text" or "json"
+    max_size_mb: int = 10
+    backup_count: int = 3
 
 
 @dataclass
@@ -253,6 +257,14 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         log = data["logging"]
         if "level" in log:
             config.logging.level = log["level"].upper()
+        if "file" in log:
+            config.logging.file = str(Path(log["file"]).expanduser()) if log["file"] else None
+        if "format" in log:
+            config.logging.format = log["format"].lower()
+        if "max_size_mb" in log:
+            config.logging.max_size_mb = int(log["max_size_mb"])
+        if "backup_count" in log:
+            config.logging.backup_count = int(log["backup_count"])
 
     if "web" in data:
         web = data["web"]
@@ -390,6 +402,8 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}LICHESS_TOKEN": lambda v: setattr(config.lichess, "token", v),
         "LICHESS_TOKEN": lambda v: setattr(config.lichess, "token", v),
         f"{ENV_PREFIX}LOG_LEVEL": lambda v: setattr(config.logging, "level", v.upper()),
+        f"{ENV_PREFIX}LOG_FILE": lambda v: setattr(config.logging, "file", v),
+        f"{ENV_PREFIX}LOG_FORMAT": lambda v: setattr(config.logging, "format", v.lower()),
         f"{ENV_PREFIX}WEB_HOST": lambda v: setattr(config.web, "host", v),
         f"{ENV_PREFIX}WEB_PORT": lambda v: setattr(config.web, "port", int(v)),
         f"{ENV_PREFIX}MAX_NEW_CARDS": lambda v: setattr(config.training, "max_new_cards", int(v)),
@@ -569,6 +583,10 @@ interleave_new = true
 
 [logging]
 level = "INFO"
+# file = "~/.chess-trainer/chess-trainer.log"  # Enable file logging
+# format = "text"                              # "text" or "json"
+# max_size_mb = 10                             # Max log file size before rotation
+# backup_count = 3                             # Number of rotated log files to keep
 
 [web]
 host = "127.0.0.1"
@@ -757,6 +775,9 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "tablebase.max_pieces": ("range", 3, 7),
     "chesscom.request_delay": ("range", 0.0, 60.0),
     "logging.level": ("enum", {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}),
+    "logging.format": ("enum", {"text", "json"}),
+    "logging.max_size_mb": ("range", 1, 1000),
+    "logging.backup_count": ("range", 0, 100),
     "game_analysis.min_classification": ("enum", {"INACCURACY", "MISTAKE", "BLUNDER"}),
     "openings.explorer_source": ("enum", {"lichess", "masters", "player"}),
     "bundles.default_pass_threshold": ("range", 0.0, 1.0),
@@ -842,7 +863,11 @@ def set_config_value(key: str, raw_value: str, config_path: Path | None = None) 
     # Case normalization for enum-like fields
     if key in ("logging.level", "game_analysis.min_classification") and isinstance(value, str):
         value = value.upper()
-    if key in ("experimental.vision_backend", "training.default_mode") and isinstance(value, str):
+    if key in (
+        "experimental.vision_backend",
+        "training.default_mode",
+        "logging.format",
+    ) and isinstance(value, str):
         value = value.lower()
 
     _validate_value(key, value)
@@ -853,6 +878,7 @@ def set_config_value(key: str, raw_value: str, config_path: Path | None = None) 
         "database.data_dir",
         "tablebase.syzygy_path",
         "auth.database_path",
+        "logging.file",
     ) and isinstance(value, str):
         value = str(Path(value).expanduser())
 

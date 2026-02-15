@@ -57,7 +57,14 @@ def _main_callback(
     """Global options applied before any subcommand."""
     global _app_config  # noqa: PLW0603
     _app_config = load_config(config)
-    configure_logging(_app_config.logging.level)
+    log_cfg = _app_config.logging
+    configure_logging(
+        level=log_cfg.level,
+        file=log_cfg.file,
+        format=log_cfg.format,
+        max_size_mb=log_cfg.max_size_mb,
+        backup_count=log_cfg.backup_count,
+    )
 
 
 def get_repo(db_path: Path | None = None) -> Repository:
