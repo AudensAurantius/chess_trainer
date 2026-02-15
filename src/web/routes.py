@@ -213,6 +213,7 @@ async def api_session_start(request: Request):
     hide_type = body.get("hide_type", False)
     exercise_types = body.get("exercise_types") or None
     max_duration = body.get("max_duration_minutes")
+    training_mode = body.get("training_mode")
     count = manager.start_session(
         max_new=max_new,
         max_reviews=max_reviews,
@@ -221,8 +222,11 @@ async def api_session_start(request: Request):
         hide_exercise_type=bool(hide_type),
         exercise_types=exercise_types,
         max_duration_minutes=int(max_duration) if max_duration else None,
+        training_mode=training_mode,
     )
-    return JSONResponse({"status": "started", "queue_size": count})
+    return JSONResponse(
+        {"status": "started", "queue_size": count, "training_mode": manager.training_mode}
+    )
 
 
 @router.get("/api/session/next")
@@ -247,6 +251,7 @@ async def api_session_next(request: Request):
         )
     response = {
         "status": "ok",
+        "exercise_id": state.exercise.id,
         "fen": state.fen,
         "side_to_move": state.side_to_move,
         "challenge": state.challenge,
@@ -254,6 +259,8 @@ async def api_session_next(request: Request):
         "exercise_num": manager.stats.exercises_shown if manager.stats else 1,
         "tags": state.exercise.tags[:3],
         "difficulty": state.exercise.difficulty,
+        "has_notes": bool(state.exercise.notes),
+        "training_mode": manager.training_mode,
     }
 
     # Include exercise type unless hidden
@@ -311,6 +318,57 @@ async def api_session_solution(request: Request):
     if info is None:
         return JSONResponse({"error": "No active exercise"}, status_code=400)
     return JSONResponse(info)
+
+
+@router.get("/api/session/notes")
+async def api_session_notes(request: Request):
+    """Get notes for the current exercise.
+
+    In study mode, returns notes text. In test mode, only has_notes flag.
+    """
+    manager = _manager(request)
+    result = manager.get_exercise_notes()
+    return JSONResponse(result)
+
+
+@router.post("/api/session/reveal-notes")
+async def api_session_reveal_notes(request: Request):
+    """Reveal notes in test mode (applies penalty flag)."""
+    manager = _manager(request)
+    result = manager.reveal_notes()
+    return JSONResponse(result)
+
+
+@router.put("/api/exercise/{exercise_id}/notes")
+async def api_exercise_notes_save(request: Request, exercise_id: str):
+    """Save notes for an exercise."""
+    manager = _manager(request)
+    body = await request.json()
+    notes = body.get("notes")
+
+    # Validate length
+    if notes is not None and len(notes) > 5000:
+        return JSONResponse({"error": "Notes must be 5000 characters or less"}, status_code=400)
+
+    # Empty string → clear notes
+    if notes is not None and notes.strip() == "":
+        notes = None
+
+    result = manager.save_exercise_notes(exercise_id, notes)
+    if not result:
+        return JSONResponse({"error": "Exercise not found"}, status_code=404)
+    return JSONResponse({"status": "saved"})
+
+
+@router.get("/api/exercise/{exercise_id}/notes")
+async def api_exercise_notes_get(request: Request, exercise_id: str):
+    """Read notes for an exercise outside training."""
+    manager = _manager(request)
+    repo = manager._open_repo()
+    exercise = repo.exercises.get(exercise_id)
+    if exercise is None:
+        return JSONResponse({"error": "Exercise not found"}, status_code=404)
+    return JSONResponse({"exercise_id": exercise_id, "notes": exercise.notes})
 
 
 @router.get("/api/session/my-move")

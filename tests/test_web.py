@@ -538,6 +538,110 @@ class TestShowMyMoveUI:
         assert ".feedback-hint" in res.text
 
 
+class TestNotesAPI:
+    """Tests for notes API endpoints."""
+
+    @pytest.fixture
+    def noted_client(self, app, tmp_path):
+        """Client with a seeded exercise that has notes."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:noted",
+                fen=SAMPLE_FEN,
+                tags=["fork"],
+                source="test",
+                solution=["g7g6"],
+                themes=["fork"],
+                metadata={"notes": "Key tactic: defend against Qxf7#"},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+        return TestClient(app)
+
+    def test_session_start_returns_training_mode(self, seeded_client):
+        res = seeded_client.post("/api/session/start", json={})
+        data = res.json()
+        assert data["training_mode"] == "study"
+
+    def test_session_start_with_test_mode(self, seeded_client):
+        res = seeded_client.post("/api/session/start", json={"training_mode": "test"})
+        data = res.json()
+        assert data["training_mode"] == "test"
+
+    def test_next_includes_notes_and_id(self, noted_client):
+        noted_client.post("/api/session/start", json={})
+        res = noted_client.get("/api/session/next")
+        data = res.json()
+        assert data["exercise_id"] == "test:noted"
+        assert data["has_notes"] is True
+        assert data["training_mode"] == "study"
+
+    def test_get_notes_study_mode(self, noted_client):
+        noted_client.post("/api/session/start", json={})
+        noted_client.get("/api/session/next")
+        res = noted_client.get("/api/session/notes")
+        data = res.json()
+        assert data["has_notes"] is True
+        assert data["notes"] == "Key tactic: defend against Qxf7#"
+
+    def test_get_notes_test_mode_hidden(self, noted_client):
+        noted_client.post("/api/session/start", json={"training_mode": "test"})
+        noted_client.get("/api/session/next")
+        res = noted_client.get("/api/session/notes")
+        data = res.json()
+        assert data["has_notes"] is True
+        assert "notes" not in data
+
+    def test_reveal_notes_test_mode(self, noted_client):
+        noted_client.post("/api/session/start", json={"training_mode": "test"})
+        noted_client.get("/api/session/next")
+        res = noted_client.post("/api/session/reveal-notes")
+        data = res.json()
+        assert data["notes"] == "Key tactic: defend against Qxf7#"
+
+    def test_save_notes(self, seeded_client):
+        res = seeded_client.put(
+            "/api/exercise/test:001/notes",
+            json={"notes": "My new annotation"},
+        )
+        assert res.status_code == 200
+        assert res.json()["status"] == "saved"
+
+        # Verify via read endpoint
+        res = seeded_client.get("/api/exercise/test:001/notes")
+        assert res.json()["notes"] == "My new annotation"
+
+    def test_save_notes_too_long(self, seeded_client):
+        res = seeded_client.put(
+            "/api/exercise/test:001/notes",
+            json={"notes": "x" * 5001},
+        )
+        assert res.status_code == 400
+
+    def test_save_notes_not_found(self, client):
+        res = client.put(
+            "/api/exercise/nonexistent/notes",
+            json={"notes": "hello"},
+        )
+        assert res.status_code == 404
+
+    def test_get_notes_not_found(self, client):
+        res = client.get("/api/exercise/nonexistent/notes")
+        assert res.status_code == 404
+
+    def test_save_empty_notes_clears(self, seeded_client):
+        seeded_client.put(
+            "/api/exercise/test:001/notes",
+            json={"notes": "temp note"},
+        )
+        seeded_client.put(
+            "/api/exercise/test:001/notes",
+            json={"notes": ""},
+        )
+        res = seeded_client.get("/api/exercise/test:001/notes")
+        assert res.json()["notes"] is None
+
+
 class TestSessionManagerNotes:
     """Tests for notes and training mode in SessionManager."""
 
