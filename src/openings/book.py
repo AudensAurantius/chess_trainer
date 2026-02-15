@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -19,6 +21,197 @@ if TYPE_CHECKING:
 
 class BookError(Exception):
     """Error in opening book operations."""
+
+
+# ── Lichess Study Support ────────────────────────────────────────────────────
+
+# Matches 8-char Lichess study ID in a lichess.org/study/ URL
+_STUDY_URL_RE = re.compile(r"lichess\.org/study/([A-Za-z0-9]{8})")
+
+MAX_LINES_PER_CHAPTER = 50
+
+
+@dataclass
+class StudyChapter:
+    """Parsed chapter from a Lichess study."""
+
+    study_name: str = ""
+    chapter_name: str = ""
+    site_url: str = ""
+    lines: list[list[str]] = field(default_factory=list)
+    annotations: list[dict[int, str]] = field(default_factory=list)
+    skipped: bool = False
+    skip_reason: str = ""
+
+
+def parse_study_id(url_or_id: str) -> str:
+    """Extract the 8-character study ID from a URL or bare string.
+
+    Args:
+        url_or_id: A Lichess study URL or bare 8-char ID.
+
+    Returns:
+        The 8-character study ID.
+
+    Raises:
+        BookError: If no valid study ID can be found.
+    """
+    text = url_or_id.strip()
+    # Try URL pattern first
+    m = _STUDY_URL_RE.search(text)
+    if m:
+        return m.group(1)
+    # Try bare 8-char alphanumeric
+    if re.fullmatch(r"[A-Za-z0-9]{8}", text):
+        return text
+    raise BookError(f"Cannot extract study ID from: {url_or_id!r}")
+
+
+def _extract_lines(
+    node: chess.pgn.ChildNode,
+    moves: list[str],
+    annotations: dict[int, str],
+    max_lines: int = MAX_LINES_PER_CHAPTER,
+) -> list[tuple[list[str], dict[int, str]]]:
+    """Recursively extract all root-to-leaf paths from a game tree.
+
+    Each path through the variation tree becomes one line. Comments on
+    moves are captured as annotations keyed by move index.
+
+    Args:
+        node: Current PGN game node.
+        moves: UCI moves accumulated so far.
+        annotations: Comments accumulated so far (move_index -> text).
+        max_lines: Maximum number of lines to extract.
+
+    Returns:
+        List of (moves, annotations) tuples, one per leaf path.
+    """
+    results: list[tuple[list[str], dict[int, str]]] = []
+
+    if node.is_end():
+        # Leaf node — emit this path
+        return [(list(moves), dict(annotations))]
+
+    for i, variation in enumerate(node.variations):
+        if len(results) >= max_lines:
+            break
+
+        move_uci = variation.move.uci()
+        move_idx = len(moves)
+        new_moves = moves + [move_uci]
+        new_annotations = dict(annotations)
+
+        # Capture comment if present
+        if variation.comment:
+            new_annotations[move_idx] = variation.comment.strip()
+
+        sub_results = _extract_lines(
+            variation, new_moves, new_annotations, max_lines - len(results)
+        )
+        results.extend(sub_results)
+
+    return results
+
+
+def parse_study_pgn(pgn_text: str) -> list[StudyChapter]:
+    """Parse multi-game PGN from a Lichess study into chapters.
+
+    Chapters with custom FEN starting positions are skipped since
+    OpeningLine assumes the standard starting position.
+
+    Args:
+        pgn_text: Raw PGN text (may contain multiple games/chapters).
+
+    Returns:
+        List of StudyChapter objects, one per chapter in the PGN.
+    """
+    chapters: list[StudyChapter] = []
+    stream = io.StringIO(pgn_text)
+
+    while True:
+        game = chess.pgn.read_game(stream)
+        if game is None:
+            break
+
+        study_name = game.headers.get("Event", "")
+        chapter_name = game.headers.get("White", "")
+        site_url = game.headers.get("Site", "")
+        fen = game.headers.get("FEN", "")
+
+        chapter = StudyChapter(
+            study_name=study_name,
+            chapter_name=chapter_name,
+            site_url=site_url,
+        )
+
+        # Skip chapters with custom FEN (not standard starting position)
+        if fen and fen != chess.STARTING_FEN:
+            chapter.skipped = True
+            chapter.skip_reason = "Custom FEN starting position"
+            chapters.append(chapter)
+            continue
+
+        # Extract all lines from the game tree
+        lines_with_annotations = _extract_lines(game, [], {})
+        for line_moves, line_annotations in lines_with_annotations:
+            if line_moves:
+                chapter.lines.append(line_moves)
+                chapter.annotations.append(line_annotations)
+
+        chapters.append(chapter)
+
+    return chapters
+
+
+def import_study_lines(
+    study_id: str,
+    chapters: list[StudyChapter],
+    color: BookColor,
+    name: str = "",
+) -> list[OpeningLine]:
+    """Build OpeningLine objects from parsed study chapters.
+
+    Uses deterministic IDs of the form ``study:{study_id}:{n}`` so that
+    re-importing the same study updates existing lines rather than
+    creating duplicates.
+
+    Args:
+        study_id: The Lichess study ID (for deterministic line IDs).
+        chapters: Parsed study chapters from :func:`parse_study_pgn`.
+        color: Which side these lines are for.
+        name: Optional override for the opening name.
+
+    Returns:
+        List of OpeningLine objects ready for storage.
+    """
+    lines: list[OpeningLine] = []
+    line_num = 0
+
+    for chapter in chapters:
+        if chapter.skipped:
+            continue
+
+        for i, line_moves in enumerate(chapter.lines):
+            line_id = f"study:{study_id}:{line_num}"
+            line_name = name or chapter.study_name
+            variation = chapter.chapter_name
+
+            now = datetime.now()
+            line = OpeningLine(
+                id=line_id,
+                color=color,
+                name=line_name,
+                variation=variation,
+                moves=line_moves,
+                annotations=chapter.annotations[i] if i < len(chapter.annotations) else {},
+                created_at=now,
+                updated_at=now,
+            )
+            lines.append(line)
+            line_num += 1
+
+    return lines
 
 
 def parse_pgn_to_uci(pgn_text: str) -> list[str]:

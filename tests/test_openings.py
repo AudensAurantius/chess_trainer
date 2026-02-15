@@ -1,5 +1,6 @@
 """Tests for the opening explorer and personal opening book."""
 
+import io
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -12,11 +13,15 @@ from src.config import AppConfig, _apply_env, _apply_toml
 from src.exercises.openings import OpeningExercise
 from src.openings.book import (
     BookError,
+    _extract_lines,
     create_line,
     generate_exercises,
     get_alternatives_from_explorer,
+    import_study_lines,
     parse_pgn_file,
     parse_pgn_to_uci,
+    parse_study_id,
+    parse_study_pgn,
 )
 from src.openings.explorer import (
     ExplorerError,
@@ -1623,3 +1628,276 @@ class TestExploreCommandFilters:
         assert result.exit_code == 0
         _, kwargs = mock_explore.call_args
         assert kwargs["explorer_filter"] is None
+
+
+# ── Lichess Study Import ─────────────────────────────────────────────────────
+
+# Sample PGN resembling Lichess study export (2 chapters, one with variations)
+STUDY_PGN_SIMPLE = """\
+[Event "My Study"]
+[Site "https://lichess.org/study/abcd1234/ch01"]
+[White "Chapter 1"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+
+[Event "My Study"]
+[Site "https://lichess.org/study/abcd1234/ch02"]
+[White "Chapter 2"]
+[Result "*"]
+
+1. d4 d5 2. c4 *
+"""
+
+STUDY_PGN_WITH_VARIATIONS = """\
+[Event "Sicilian Lines"]
+[Site "https://lichess.org/study/abcd1234/ch01"]
+[White "Main Lines"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 (2. Nc3 Nc6) 2... d6 *
+"""
+
+STUDY_PGN_WITH_COMMENTS = """\
+[Event "Annotated Study"]
+[Site "https://lichess.org/study/abcd1234/ch01"]
+[White "Annotated"]
+[Result "*"]
+
+1. e4 {Best by test} e5 2. Nf3 {Main line} *
+"""
+
+STUDY_PGN_CUSTOM_FEN = """\
+[Event "Endgame Study"]
+[Site "https://lichess.org/study/abcd1234/ch01"]
+[White "Custom FEN"]
+[FEN "8/8/4k3/8/8/4K3/4P3/8 w - - 0 1"]
+[Result "*"]
+
+1. Kd4 *
+"""
+
+
+class TestParseStudyId:
+    def test_bare_id(self):
+        assert parse_study_id("abcd1234") == "abcd1234"
+
+    def test_full_url(self):
+        assert parse_study_id("https://lichess.org/study/abcd1234") == "abcd1234"
+
+    def test_url_with_chapter(self):
+        assert parse_study_id("https://lichess.org/study/abcd1234/ch01abcd") == "abcd1234"
+
+    def test_url_with_trailing_slash(self):
+        assert parse_study_id("https://lichess.org/study/abcd1234/") == "abcd1234"
+
+    def test_whitespace_stripped(self):
+        assert parse_study_id("  abcd1234  ") == "abcd1234"
+
+    def test_invalid_too_short(self):
+        with pytest.raises(BookError, match="Cannot extract study ID"):
+            parse_study_id("abc")
+
+    def test_invalid_too_long(self):
+        with pytest.raises(BookError, match="Cannot extract study ID"):
+            parse_study_id("abcdefghij")
+
+    def test_invalid_special_chars(self):
+        with pytest.raises(BookError, match="Cannot extract study ID"):
+            parse_study_id("ab-cd_12")
+
+
+class TestExtractLines:
+    def test_mainline_only(self):
+        game = chess.pgn.read_game(io.StringIO("1. e4 e5 2. Nf3 *"))
+        lines = _extract_lines(game, [], {})
+        assert len(lines) == 1
+        assert lines[0][0] == ["e2e4", "e7e5", "g1f3"]
+
+    def test_single_variation(self):
+        game = chess.pgn.read_game(io.StringIO("1. e4 c5 2. Nf3 (2. Nc3 Nc6) 2... d6 *"))
+        lines = _extract_lines(game, [], {})
+        assert len(lines) == 2
+        # Main line: e4 c5 Nf3 d6
+        assert lines[0][0] == ["e2e4", "c7c5", "g1f3", "d7d6"]
+        # Variation: e4 c5 Nc3 Nc6
+        assert lines[1][0] == ["e2e4", "c7c5", "b1c3", "b8c6"]
+
+    def test_comments_captured(self):
+        game = chess.pgn.read_game(io.StringIO("1. e4 {Best by test} e5 *"))
+        lines = _extract_lines(game, [], {})
+        assert len(lines) == 1
+        assert 0 in lines[0][1]
+        assert lines[0][1][0] == "Best by test"
+
+    def test_max_lines_limit(self):
+        # Build a PGN with many variations
+        pgn = "1. e4 (1. d4) (1. c4) (1. Nf3) (1. g3) *"
+        game = chess.pgn.read_game(io.StringIO(pgn))
+        lines = _extract_lines(game, [], {}, max_lines=3)
+        assert len(lines) == 3
+
+    def test_empty_game(self):
+        game = chess.pgn.read_game(io.StringIO("*"))
+        lines = _extract_lines(game, [], {})
+        assert len(lines) == 1
+        assert lines[0][0] == []
+
+
+class TestParseStudyPgn:
+    def test_simple_two_chapters(self):
+        chapters = parse_study_pgn(STUDY_PGN_SIMPLE)
+        assert len(chapters) == 2
+        assert chapters[0].chapter_name == "Chapter 1"
+        assert chapters[0].study_name == "My Study"
+        assert len(chapters[0].lines) == 1
+        assert chapters[0].lines[0] == ["e2e4", "e7e5", "g1f3", "b8c6"]
+        assert chapters[1].chapter_name == "Chapter 2"
+        assert len(chapters[1].lines) == 1
+        assert chapters[1].lines[0] == ["d2d4", "d7d5", "c2c4"]
+
+    def test_variations_extracted(self):
+        chapters = parse_study_pgn(STUDY_PGN_WITH_VARIATIONS)
+        assert len(chapters) == 1
+        ch = chapters[0]
+        assert len(ch.lines) == 2
+        # Main line
+        assert ch.lines[0] == ["e2e4", "c7c5", "g1f3", "d7d6"]
+        # Variation
+        assert ch.lines[1] == ["e2e4", "c7c5", "b1c3", "b8c6"]
+
+    def test_comments_preserved(self):
+        chapters = parse_study_pgn(STUDY_PGN_WITH_COMMENTS)
+        assert len(chapters) == 1
+        ch = chapters[0]
+        assert len(ch.annotations) == 1
+        # "Best by test" on move 0, "Main line" on move 2
+        assert 0 in ch.annotations[0]
+        assert ch.annotations[0][0] == "Best by test"
+        assert 2 in ch.annotations[0]
+
+    def test_custom_fen_skipped(self):
+        chapters = parse_study_pgn(STUDY_PGN_CUSTOM_FEN)
+        assert len(chapters) == 1
+        assert chapters[0].skipped is True
+        assert "Custom FEN" in chapters[0].skip_reason
+
+    def test_empty_pgn(self):
+        chapters = parse_study_pgn("")
+        assert chapters == []
+
+    def test_site_url_captured(self):
+        chapters = parse_study_pgn(STUDY_PGN_SIMPLE)
+        assert "lichess.org/study" in chapters[0].site_url
+
+
+class TestImportStudyLines:
+    def test_basic_import(self):
+        chapters = parse_study_pgn(STUDY_PGN_SIMPLE)
+        lines = import_study_lines("abcd1234", chapters, BookColor.WHITE)
+        assert len(lines) == 2
+        assert lines[0].id == "study:abcd1234:0"
+        assert lines[1].id == "study:abcd1234:1"
+        assert lines[0].color == BookColor.WHITE
+        assert lines[0].name == "My Study"
+        assert lines[0].variation == "Chapter 1"
+
+    def test_deterministic_ids(self):
+        chapters = parse_study_pgn(STUDY_PGN_SIMPLE)
+        lines1 = import_study_lines("abcd1234", chapters, BookColor.WHITE)
+        lines2 = import_study_lines("abcd1234", chapters, BookColor.WHITE)
+        assert [ln.id for ln in lines1] == [ln.id for ln in lines2]
+
+    def test_skipped_chapters_excluded(self):
+        pgn = STUDY_PGN_SIMPLE + STUDY_PGN_CUSTOM_FEN
+        chapters = parse_study_pgn(pgn)
+        lines = import_study_lines("testid12", chapters, BookColor.BLACK)
+        # Only the 2 non-FEN chapters should produce lines
+        assert len(lines) == 2
+
+    def test_custom_name_overrides_study_name(self):
+        chapters = parse_study_pgn(STUDY_PGN_SIMPLE)
+        lines = import_study_lines("abcd1234", chapters, BookColor.WHITE, name="My Repertoire")
+        assert all(ln.name == "My Repertoire" for ln in lines)
+
+    def test_annotations_carried_through(self):
+        chapters = parse_study_pgn(STUDY_PGN_WITH_COMMENTS)
+        lines = import_study_lines("abcd1234", chapters, BookColor.WHITE)
+        assert len(lines) == 1
+        assert 0 in lines[0].annotations
+        assert lines[0].annotations[0] == "Best by test"
+
+    def test_empty_chapters(self):
+        lines = import_study_lines("abcd1234", [], BookColor.WHITE)
+        assert lines == []
+
+
+class TestGetStudyPgn:
+    @patch("src.lichess.api.requests.get")
+    def test_basic_fetch(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.text = STUDY_PGN_SIMPLE
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        from src.lichess.api import get_study_pgn
+
+        result = get_study_pgn("abcd1234")
+        assert "1. e4 e5" in result
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert "study/abcd1234.pgn" in args[0]
+
+    @patch("src.lichess.api.requests.get")
+    def test_404_raises_lichess_error(self, mock_get):
+        import requests
+
+        from src.lichess.api import LichessError, get_study_pgn
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        http_error = requests.HTTPError(response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_get.return_value = mock_response
+
+        with pytest.raises(LichessError, match="Study not found"):
+            get_study_pgn("notfound")
+
+    @patch("src.lichess.api.requests.get")
+    def test_network_error_raises_lichess_error(self, mock_get):
+        import requests
+
+        from src.lichess.api import LichessError, get_study_pgn
+
+        mock_get.side_effect = requests.ConnectionError("timeout")
+
+        with pytest.raises(LichessError, match="Failed to fetch"):
+            get_study_pgn("abcd1234")
+
+    @patch("src.lichess.api.requests.get")
+    def test_comments_and_variations_params(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.text = ""
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        from src.lichess.api import get_study_pgn
+
+        get_study_pgn("abcd1234", comments=False, variations=False)
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["comments"] == "false"
+        assert kwargs["params"]["variations"] == "false"
+
+    @patch("src.lichess.api.requests.get")
+    def test_default_params_not_sent(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.text = ""
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        from src.lichess.api import get_study_pgn
+
+        get_study_pgn("abcd1234")
+        _, kwargs = mock_get.call_args
+        assert "comments" not in kwargs["params"]
+        assert "variations" not in kwargs["params"]
