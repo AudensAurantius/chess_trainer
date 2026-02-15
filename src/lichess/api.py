@@ -301,6 +301,45 @@ def get_user_games(
     )
 
 
+def get_study_pgn(
+    study_id: str,
+    comments: bool = True,
+    variations: bool = True,
+) -> str:
+    """Fetch the PGN text for a Lichess study.
+
+    Args:
+        study_id: The 8-character Lichess study ID.
+        comments: Include annotations/comments in the PGN.
+        variations: Include side lines / variations.
+
+    Returns:
+        Raw PGN text containing all chapters.
+
+    Raises:
+        LichessError: If the study cannot be fetched.
+    """
+    url = f"{LICHESS_API}/study/{study_id}.pgn"
+    headers = _get_headers(oauth_token=LICHESS_TOKEN)
+    params: dict[str, str] = {}
+    if not comments:
+        params["comments"] = "false"
+    if not variations:
+        params["variations"] = "false"
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            raise LichessError(f"Study not found: {study_id}") from e
+        raise LichessError(f"Failed to fetch study {study_id}: {e}") from e
+    except requests.RequestException as e:
+        raise LichessError(f"Failed to fetch study {study_id}: {e}") from e
+
+    return response.text
+
+
 def write_puzzle_history(filename: str | Path, limit: int = 100) -> None:
     """Download puzzle history to a file with a progress bar.
 

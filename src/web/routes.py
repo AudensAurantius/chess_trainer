@@ -151,6 +151,33 @@ async def api_import_chesscom(request: Request):
     return JSONResponse(result)
 
 
+@router.post("/api/import/lichess-study")
+async def api_import_lichess_study(request: Request):
+    """Import opening lines from a Lichess study."""
+    manager = _manager(request)
+    body = await request.json()
+
+    study_url = body.get("study_url", "").strip()
+    if not study_url:
+        return JSONResponse({"error": "Study URL or ID is required"}, status_code=400)
+
+    color = body.get("color", "").strip()
+    if color not in ("white", "black"):
+        return JSONResponse({"error": "Color must be 'white' or 'black'"}, status_code=400)
+
+    try:
+        result = manager.import_lichess_study(study_url=study_url, color=color)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            return JSONResponse({"error": error_msg}, status_code=404)
+        return JSONResponse({"error": error_msg}, status_code=500)
+
+    return JSONResponse(result)
+
+
 @router.post("/api/session/start")
 async def api_session_start(request: Request):
     """Start a new training session."""
