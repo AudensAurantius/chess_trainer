@@ -780,3 +780,107 @@ body {
 /* Utility */
 .dim { color: var(--text-secondary); }
 .text-center { text-align: center; }
+
+/* ── Hamburger toggle (CSS-only) ─────────────────────────────────────────── */
+.nav-toggle-checkbox {
+    display: none;
+}
+
+.nav-toggle-label {
+    display: none;
+    cursor: pointer;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nav-toggle-icon,
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+    display: block;
+    background: var(--text-primary);
+    height: 2px;
+    width: 20px;
+    border-radius: 1px;
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    position: relative;
+}
+
+.nav-toggle-icon::before,
+.nav-toggle-icon::after {
+    content: '';
+    position: absolute;
+}
+
+.nav-toggle-icon::before { top: -6px; }
+.nav-toggle-icon::after { top: 6px; }
+
+/* Animate to X when checked */
+.nav-toggle-checkbox:checked + .nav-toggle-label .nav-toggle-icon {
+    background: transparent;
+}
+
+.nav-toggle-checkbox:checked + .nav-toggle-label .nav-toggle-icon::before {
+    top: 0;
+    transform: rotate(45deg);
+}
+
+.nav-toggle-checkbox:checked + .nav-toggle-label .nav-toggle-icon::after {
+    top: 0;
+    transform: rotate(-45deg);
+}
+
+/* ── Mobile (<768px) ─────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+    /* Navigation */
+    .navbar {
+        flex-wrap: wrap;
+        padding: 0 0.75rem;
+    }
+
+    .nav-toggle-label {
+        display: flex;
+    }
+
+    .nav-links {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        margin-left: 0;
+        padding: 0.5rem 0;
+        border-top: 1px solid var(--border);
+        gap: 0;
+    }
+
+    .nav-toggle-checkbox:checked ~ .nav-links {
+        display: flex;
+    }
+
+    .nav-links .nav-link {
+        padding: 0.75rem;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        border-radius: 0;
+    }
+
+    .nav-links .nav-link:hover {
+        background: var(--bg-hover);
+    }
+
+    .nav-user {
+        padding: 0.75rem;
+        margin-left: 0;
+    }
+
+    .nav-logout button {
+        padding: 0.75rem;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        width: 100%;
+    }
+}
