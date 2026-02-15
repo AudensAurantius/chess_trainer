@@ -5,89 +5,284 @@
 <div class="import-section">
     <h1>Import Exercises</h1>
 
-    <div class="panel import-form">
-        <h2>Lichess Puzzles</h2>
-        <p class="dim">Import random tactical puzzles from Lichess.</p>
-
-        <div class="import-fields">
-            <div class="form-group">
-                <label for="import-count">Count (max 100)</label>
-                <input type="number" id="import-count" value="20" min="1" max="100">
-            </div>
-            <div class="form-group">
-                <label for="import-difficulty">Difficulty</label>
-                <select id="import-difficulty">
-                    <option value="">Any</option>
-                    <option value="easiest">Easiest</option>
-                    <option value="easier">Easier</option>
-                    <option value="normal">Normal</option>
-                    <option value="harder">Harder</option>
-                    <option value="hardest">Hardest</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="import-themes">Themes (comma-separated)</label>
-                <input type="text" id="import-themes" placeholder="e.g. fork, pin, mateIn2">
-            </div>
-        </div>
-
-        <button id="import-btn" class="btn btn-primary" onclick="importPuzzles()">
-            Import from Lichess
-        </button>
-
-        <div id="import-feedback" class="feedback" style="display: none;"></div>
+    <div class="import-tabs">
+        <button class="tab-btn active" data-tab="lichess-puzzles">Lichess Puzzles</button>
+        <button class="tab-btn" data-tab="failed-puzzles">Failed Puzzles</button>
+        <button class="tab-btn" data-tab="chesscom-puzzles">Chess.com</button>
+        <button class="tab-btn" data-tab="lichess-games">Lichess Games</button>
     </div>
+
+    <!-- Lichess Puzzles -->
+    <div id="tab-lichess-puzzles" class="tab-content active">
+        <div class="panel import-form">
+            <h2>Lichess Puzzles</h2>
+            <p class="dim">Import random tactical puzzles from Lichess.</p>
+
+            <div class="import-fields">
+                <div class="form-group">
+                    <label for="import-count">Count (max 100)</label>
+                    <input type="number" id="import-count" value="20" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="import-difficulty">Difficulty</label>
+                    <select id="import-difficulty">
+                        <option value="">Any</option>
+                        <option value="easiest">Easiest</option>
+                        <option value="easier">Easier</option>
+                        <option value="normal">Normal</option>
+                        <option value="harder">Harder</option>
+                        <option value="hardest">Hardest</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="import-themes">Themes (comma-separated)</label>
+                    <input type="text" id="import-themes" placeholder="e.g. fork, pin, mateIn2">
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="importLichessPuzzles(this)">
+                Import from Lichess
+            </button>
+        </div>
+    </div>
+
+    <!-- Failed Puzzles -->
+    <div id="tab-failed-puzzles" class="tab-content">
+        <div class="panel import-form">
+            <h2>Failed Puzzles</h2>
+            <p class="dim">Re-import puzzles you previously got wrong on Lichess.</p>
+
+            {% if not has_lichess_token %}
+            <div class="info-box">
+                No Lichess token configured. Set the <code>LICHESS_TOKEN</code> environment
+                variable with a token that has <code>puzzle:read</code> scope.
+            </div>
+            {% endif %}
+
+            <div class="import-fields">
+                <div class="form-group">
+                    <label for="failed-count">Count (max 100)</label>
+                    <input type="number" id="failed-count" value="50" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="failed-since">Time horizon</label>
+                    <select id="failed-since">
+                        <option value="">All time</option>
+                        <option value="1 month">Last month</option>
+                        <option value="3 months" selected>Last 3 months</option>
+                        <option value="6 months">Last 6 months</option>
+                        <option value="1 year">Last year</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" id="failed-auto-tag" checked>
+                        Auto-tag as "failed-puzzle" and "needs-review"
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="importFailedPuzzles(this)"
+                {% if not has_lichess_token %}disabled{% endif %}>
+                Import Failed Puzzles
+            </button>
+        </div>
+    </div>
+
+    <!-- Chess.com Puzzles -->
+    <div id="tab-chesscom-puzzles" class="tab-content">
+        <div class="panel import-form">
+            <h2>Chess.com Puzzles</h2>
+            <p class="dim">Import random tactical puzzles from Chess.com.</p>
+
+            <div class="import-fields">
+                <div class="form-group">
+                    <label for="chesscom-count">Count (max 100)</label>
+                    <input type="number" id="chesscom-count" value="20" min="1" max="100">
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" id="chesscom-daily" checked>
+                        Include daily puzzle
+                    </label>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="importChessComPuzzles(this)">
+                Import from Chess.com
+            </button>
+        </div>
+    </div>
+
+    <!-- Lichess Games -->
+    <div id="tab-lichess-games" class="tab-content">
+        <div class="panel import-form">
+            <h2>Lichess Game Analysis</h2>
+            <p class="dim">Generate exercises from your Lichess games using server evaluations.</p>
+
+            <div class="info-box">
+                Uses Lichess server-side analysis — no local engine required.
+                Processing may take a moment for many games.
+            </div>
+
+            <div class="import-fields">
+                <div class="form-group">
+                    <label for="games-username">Lichess username</label>
+                    <input type="text" id="games-username" placeholder="e.g. DrNykterstein">
+                </div>
+                <div class="form-group">
+                    <label for="games-max">Max games (max 50)</label>
+                    <input type="number" id="games-max" value="10" min="1" max="50">
+                </div>
+                <div class="form-group">
+                    <label for="games-color">Color</label>
+                    <select id="games-color">
+                        <option value="">Both</option>
+                        <option value="white">White</option>
+                        <option value="black">Black</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="games-perf">Time control</label>
+                    <select id="games-perf">
+                        <option value="">Any</option>
+                        <option value="ultraBullet">UltraBullet</option>
+                        <option value="bullet">Bullet</option>
+                        <option value="blitz">Blitz</option>
+                        <option value="rapid">Rapid</option>
+                        <option value="classical">Classical</option>
+                        <option value="correspondence">Correspondence</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="games-rated">Rated</label>
+                    <select id="games-rated">
+                        <option value="">Any</option>
+                        <option value="true">Rated only</option>
+                        <option value="false">Casual only</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="importLichessGames(this)">
+                Analyze Games
+            </button>
+        </div>
+    </div>
+
+    <div id="import-feedback" class="feedback" style="display: none;"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function importPuzzles() {
-    const btn = document.getElementById('import-btn');
+/* Tab switching */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        document.getElementById('import-feedback').style.display = 'none';
+    });
+});
+
+/* Shared feedback helper */
+function showFeedback(data, ok) {
     const feedback = document.getElementById('import-feedback');
+    if (!ok) {
+        feedback.innerHTML = data.error || 'Import failed.';
+        feedback.className = 'feedback feedback-wrong';
+    } else {
+        let msg = `Added ${data.added} exercises`;
+        if (data.skipped > 0) msg += `, ${data.skipped} skipped (duplicates)`;
+        if (data.errors > 0) msg += `, ${data.errors} errors`;
+        msg += '.';
+        if (data.added > 0) {
+            msg += ' <a href="/train" class="feedback-link">Start Training &rarr;</a>';
+        }
+        feedback.innerHTML = msg;
+        feedback.className = 'feedback feedback-correct';
+    }
+    feedback.style.display = 'block';
+}
 
-    const count = parseInt(document.getElementById('import-count').value) || 20;
-    const difficulty = document.getElementById('import-difficulty').value || null;
-    const themesRaw = document.getElementById('import-themes').value.trim();
-    const themes = themesRaw ? themesRaw.split(',').map(t => t.trim()).filter(t => t) : null;
-
+async function doImport(btn, url, body, label) {
+    const feedback = document.getElementById('import-feedback');
     btn.disabled = true;
     btn.textContent = 'Importing...';
     feedback.style.display = 'none';
 
     try {
-        const body = { count };
-        if (difficulty) body.difficulty = difficulty;
-        if (themes && themes.length > 0) body.themes = themes;
-
-        const res = await fetch('/api/import/lichess', {
+        const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
         });
-
         const data = await res.json();
-
-        if (!res.ok) {
-            feedback.textContent = data.error || 'Import failed.';
-            feedback.className = 'feedback feedback-wrong';
-        } else {
-            let msg = `Added ${data.added} puzzles`;
-            if (data.skipped > 0) msg += `, ${data.skipped} skipped (duplicates)`;
-            if (data.errors > 0) msg += `, ${data.errors} errors`;
-            msg += '.';
-            feedback.textContent = msg;
-            feedback.className = 'feedback feedback-correct';
-        }
-        feedback.style.display = 'block';
+        showFeedback(data, res.ok);
     } catch (error) {
-        feedback.textContent = 'Import failed: ' + error.message;
-        feedback.className = 'feedback feedback-wrong';
-        feedback.style.display = 'block';
+        showFeedback({ error: 'Import failed: ' + error.message }, false);
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Import from Lichess';
+        btn.textContent = label;
     }
+}
+
+/* Lichess Puzzles */
+function importLichessPuzzles(btn) {
+    const count = parseInt(document.getElementById('import-count').value) || 20;
+    const difficulty = document.getElementById('import-difficulty').value || null;
+    const themesRaw = document.getElementById('import-themes').value.trim();
+    const themes = themesRaw ? themesRaw.split(',').map(t => t.trim()).filter(t => t) : null;
+
+    const body = { count };
+    if (difficulty) body.difficulty = difficulty;
+    if (themes && themes.length > 0) body.themes = themes;
+
+    doImport(btn, '/api/import/lichess', body, 'Import from Lichess');
+}
+
+/* Failed Puzzles */
+function importFailedPuzzles(btn) {
+    const count = parseInt(document.getElementById('failed-count').value) || 50;
+    const since = document.getElementById('failed-since').value || null;
+    const autoTag = document.getElementById('failed-auto-tag').checked;
+
+    const body = { count, auto_tag: autoTag };
+    if (since) body.since = since;
+
+    doImport(btn, '/api/import/lichess-failed', body, 'Import Failed Puzzles');
+}
+
+/* Chess.com Puzzles */
+function importChessComPuzzles(btn) {
+    const count = parseInt(document.getElementById('chesscom-count').value) || 20;
+    const includeDaily = document.getElementById('chesscom-daily').checked;
+
+    doImport(btn, '/api/import/chesscom', { count, include_daily: includeDaily }, 'Import from Chess.com');
+}
+
+/* Lichess Games */
+function importLichessGames(btn) {
+    const username = document.getElementById('games-username').value.trim();
+    if (!username) {
+        showFeedback({ error: 'Please enter a Lichess username.' }, false);
+        return;
+    }
+
+    const maxGames = parseInt(document.getElementById('games-max').value) || 10;
+    const color = document.getElementById('games-color').value || null;
+    const perfType = document.getElementById('games-perf').value || null;
+    const ratedVal = document.getElementById('games-rated').value;
+    const rated = ratedVal === '' ? null : ratedVal === 'true';
+
+    const body = { username, max_games: maxGames };
+    if (color) body.color = color;
+    if (perfType) body.perf_type = perfType;
+    if (rated !== null) body.rated = rated;
+
+    doImport(btn, '/api/import/lichess-games', body, 'Analyze Games');
 }
 </script>
 {% endblock %}

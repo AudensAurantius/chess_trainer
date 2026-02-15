@@ -140,7 +140,7 @@ class TestSessionManagerImport:
 
 
 class TestImportPage:
-    """Tests for the import page and nav link."""
+    """Tests for the import page template."""
 
     def test_import_page_renders(self, client):
         res = client.get("/import")
@@ -159,6 +159,57 @@ class TestImportPage:
         res = client.get("/")
         assert 'href="/import"' in res.text
         assert "Import" in res.text
+
+    def test_import_page_has_tabs(self, client):
+        """Import page shows all four tab buttons."""
+        res = client.get("/import")
+        assert 'data-tab="lichess-puzzles"' in res.text
+        assert 'data-tab="failed-puzzles"' in res.text
+        assert 'data-tab="chesscom-puzzles"' in res.text
+        assert 'data-tab="lichess-games"' in res.text
+
+    def test_import_page_has_chesscom_fields(self, client):
+        """Chess.com tab has count and daily toggle."""
+        res = client.get("/import")
+        assert 'id="chesscom-count"' in res.text
+        assert 'id="chesscom-daily"' in res.text
+
+    def test_import_page_has_failed_fields(self, client):
+        """Failed puzzles tab has count, since, and auto-tag."""
+        res = client.get("/import")
+        assert 'id="failed-count"' in res.text
+        assert 'id="failed-since"' in res.text
+        assert 'id="failed-auto-tag"' in res.text
+
+    def test_import_page_has_games_fields(self, client):
+        """Games tab has username, max, color, perf, rated."""
+        res = client.get("/import")
+        assert 'id="games-username"' in res.text
+        assert 'id="games-max"' in res.text
+        assert 'id="games-color"' in res.text
+        assert 'id="games-perf"' in res.text
+        assert 'id="games-rated"' in res.text
+
+    def test_import_page_shows_token_warning_when_missing(self, tmp_path):
+        """Failed puzzles tab shows warning when no Lichess token."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        app = create_app(config)
+        client = TestClient(app)
+        with patch("src.lichess.constants.LICHESS_TOKEN", None):
+            res = client.get("/import")
+        assert "LICHESS_TOKEN" in res.text
+        assert "info-box" in res.text
+
+    def test_import_page_hides_token_warning_when_present(self, tmp_path):
+        """Failed puzzles tab hides warning when Lichess token present."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        config.lichess.token = "lip_test123"
+        app = create_app(config)
+        client = TestClient(app)
+        res = client.get("/import")
+        assert "No Lichess token" not in res.text
 
 
 class TestImportAPI:
