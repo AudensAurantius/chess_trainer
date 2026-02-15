@@ -207,6 +207,10 @@ async def api_session_next(request: Request):
         if game_context:
             response["game_context"] = game_context
 
+    # Signal whether "show my move" hint is available
+    if state.exercise.metadata.get("played_move_uci"):
+        response["has_played_move"] = True
+
     return JSONResponse(response)
 
 
@@ -241,6 +245,20 @@ async def api_session_solution(request: Request):
     info = manager.get_solution_info()
     if info is None:
         return JSONResponse({"error": "No active exercise"}, status_code=400)
+    return JSONResponse(info)
+
+
+@router.get("/api/session/my-move")
+async def api_session_my_move(request: Request):
+    """Get the user's original played move for own-game exercises.
+
+    Returns the move that the user actually played in the game, allowing
+    them to see what to avoid. Applies a mild scoring penalty (0.85x).
+    """
+    manager = _manager(request)
+    info = manager.get_played_move()
+    if info is None:
+        return JSONResponse({"error": "No played move available"}, status_code=404)
     return JSONResponse(info)
 
 

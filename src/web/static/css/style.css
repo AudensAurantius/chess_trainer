@@ -337,6 +337,12 @@ body {
     border: 1px solid rgba(43, 149, 214, 0.3);
 }
 
+.feedback-hint {
+    background: rgba(217, 130, 43, 0.15);
+    color: #d9822c;
+    border: 1px solid rgba(217, 130, 43, 0.3);
+}
+
 /* Solution */
 .solution {
     text-align: center;
@@ -364,6 +370,28 @@ body {
     flex: 1;
     max-width: 100px;
     text-align: center;
+}
+
+/* "What did I play?" button */
+.btn-hint {
+    background: rgba(217, 130, 43, 0.2);
+    color: #d9822c;
+    border: 1px solid rgba(217, 130, 43, 0.4);
+}
+
+.btn-hint:hover {
+    background: rgba(217, 130, 43, 0.35);
+}
+
+.btn-hint:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Played move square highlight */
+.highlight-played-move {
+    box-shadow: inset 0 0 0 3px #d9822c !important;
+    background-color: rgba(217, 130, 43, 0.4) !important;
 }
 
 /* Controls */
