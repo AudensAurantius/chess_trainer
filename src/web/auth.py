@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 auth_router = APIRouter()
 
 # Paths that don't require authentication
-_EXEMPT_PREFIXES = ("/login", "/register", "/static", "/favicon.ico")
+_EXEMPT_PREFIXES = ("/login", "/register", "/static", "/favicon.ico", "/sw.js", "/manifest.json")
 
 
 # ── Middleware ────────────────────────────────────────────────────────────────

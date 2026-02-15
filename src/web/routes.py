@@ -1,9 +1,13 @@
 """FastAPI route handlers for the web interface."""
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 router = APIRouter()
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _templates(request: Request):
@@ -21,6 +25,25 @@ def _manager(request: Request):
 def _user(request: Request):
     """Get the authenticated user (or None) from middleware state."""
     return getattr(request.state, "user", None)
+
+
+@router.get("/sw.js")
+async def service_worker():
+    """Serve the service worker from root scope."""
+    return FileResponse(
+        STATIC_DIR / "js" / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
+
+
+@router.get("/manifest.json")
+async def manifest():
+    """Serve the PWA manifest from root."""
+    return FileResponse(
+        STATIC_DIR / "manifest.json",
+        media_type="application/manifest+json",
+    )
 
 
 @router.get("/", response_class=HTMLResponse)

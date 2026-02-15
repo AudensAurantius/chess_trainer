@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Chess Trainer{% endblock %}</title>
     <link rel="icon" href="data:,">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#161512">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
     <link rel="stylesheet" href="/static/vendor/chessboard-1.0.0.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
     {% block head %}{% endblock %}
@@ -42,5 +45,10 @@
     <script src="/static/vendor/chess.min.js"></script>
     <script src="/static/vendor/chessboard-1.0.0.min.js"></script>
     {% block scripts %}{% endblock %}
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+    }
+    </script>
 </body>
 </html>

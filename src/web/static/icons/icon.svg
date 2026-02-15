@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#161512"/>
+  <g transform="translate(128, 48) scale(1.0)" fill="#629924">
+    <!-- Chess knight silhouette -->
+    <path d="M200 420H56V380H80L100 300L60 260C60 260 40 220 60 180
+             C80 140 100 120 120 100L100 60L140 40L160 80
+             C180 60 200 50 220 50C240 50 260 70 260 70
+             L240 120C240 120 260 140 260 180
+             C260 220 240 260 220 280L200 340H220L240 380H200V420Z"/>
+    <!-- Eye -->
+    <circle cx="190" cy="120" r="12" fill="#161512"/>
+  </g>
+</svg>
