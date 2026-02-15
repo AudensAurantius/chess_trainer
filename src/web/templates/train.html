@@ -19,6 +19,23 @@
                 <label for="include-tags">Tags (comma-separated)</label>
                 <input type="text" id="include-tags" placeholder="e.g. fork, pin, my-weak-spots">
             </div>
+            <div class="option-group">
+                <label for="exercise-type-filter">Exercise type</label>
+                <select id="exercise-type-filter">
+                    <option value="">All types</option>
+                    <option value="TACTIC">Tactics</option>
+                    <option value="ENDGAME">Endgames</option>
+                    <option value="OPENING">Openings</option>
+                    <option value="POSITIONAL">Positional</option>
+                </select>
+            </div>
+            <div class="option-group">
+                <label for="duration">Duration (minutes, 0 = unlimited)</label>
+                <input type="number" id="duration" value="0" min="0" max="120">
+            </div>
+            <div class="option-group">
+                <label><input type="checkbox" id="hide-type"> Hide exercise type</label>
+            </div>
         </div>
         <button id="start-btn" class="btn btn-primary btn-large" onclick="startSession()">
             Start Training
@@ -30,6 +47,8 @@
     <div id="session-panel" class="panel" style="display: none;">
         <div class="exercise-header">
             <span id="progress-text">Exercise 1</span>
+            <span id="exercise-type" class="dim"></span>
+            <span id="timer-text" class="dim"></span>
             <span id="remaining-text" class="dim"></span>
         </div>
 

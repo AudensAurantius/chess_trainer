@@ -1,15 +1,21 @@
-"""Tests for E8: Exercise type label toggle."""
+"""Tests for E8: Exercise type label toggle + E3: Themed sessions."""
 
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from src.cli.app import _parse_duration, app
-from src.config import TrainingConfig, load_config
+from src.config import AppConfig, TrainingConfig, load_config
+from src.exercises import TacticExercise
+from src.storage import Repository
 from src.training.session import SessionConfig
+from src.web import create_app
 
 runner = CliRunner()
+
+SAMPLE_FEN = "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
 
 
 class TestE8Config:
@@ -107,3 +113,81 @@ class TestParseDuration:
     def test_zero_minutes(self):
         assert _parse_duration("0m") == 0
         assert _parse_duration("0") == 0
+
+
+# ── Web API tests ──────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def web_app(tmp_path):
+    config = AppConfig()
+    config.database.path = str(tmp_path / "test.db")
+    return create_app(config)
+
+
+@pytest.fixture
+def seeded_web_client(web_app, tmp_path):
+    with Repository(tmp_path / "test.db") as repo:
+        tactic = TacticExercise(
+            id="test:001",
+            fen=SAMPLE_FEN,
+            tags=["fork", "tactic"],
+            source="test",
+            difficulty=1500.0,
+            solution=["g7g6"],
+            themes=["fork"],
+        )
+        repo.exercises.add(tactic)
+        repo.cards.get_or_create(tactic.id)
+    return TestClient(web_app)
+
+
+class TestE8WebTypeToggle:
+    """Test exercise type in web API responses."""
+
+    def test_next_includes_type_by_default(self, seeded_web_client):
+        seeded_web_client.post("/api/session/start", json={})
+        res = seeded_web_client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "ok"
+        assert data["exercise_type"] == "TACTIC"
+
+    def test_next_omits_type_when_hidden(self, seeded_web_client):
+        seeded_web_client.post("/api/session/start", json={"hide_type": True})
+        res = seeded_web_client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "exercise_type" not in data
+
+    def test_start_accepts_exercise_types_filter(self, seeded_web_client):
+        # Filter for ENDGAME only — our tactic should be excluded
+        res = seeded_web_client.post("/api/session/start", json={"exercise_types": ["ENDGAME"]})
+        data = res.json()
+        assert data["queue_size"] == 0
+
+    def test_start_accepts_matching_exercise_type(self, seeded_web_client):
+        res = seeded_web_client.post("/api/session/start", json={"exercise_types": ["TACTIC"]})
+        data = res.json()
+        assert data["queue_size"] == 1
+
+    def test_start_with_duration(self, seeded_web_client):
+        seeded_web_client.post("/api/session/start", json={"max_duration_minutes": 15})
+        res = seeded_web_client.get("/api/session/next")
+        data = res.json()
+        assert data["status"] == "ok"
+        assert "remaining_minutes" in data
+        assert "elapsed_minutes" in data
+        assert data["remaining_minutes"] <= 15
+
+    def test_no_duration_no_timer(self, seeded_web_client):
+        seeded_web_client.post("/api/session/start", json={})
+        res = seeded_web_client.get("/api/session/next")
+        data = res.json()
+        assert "remaining_minutes" not in data
+        assert "elapsed_minutes" not in data
+
+    def test_train_page_has_type_filter(self, seeded_web_client):
+        res = seeded_web_client.get("/train")
+        assert "exercise-type-filter" in res.text
+        assert "hide-type" in res.text
+        assert "duration" in res.text

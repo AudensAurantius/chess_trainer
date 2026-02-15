@@ -14,11 +14,23 @@ async function startSession() {
     const maxReviews = parseInt(document.getElementById('max-reviews').value) || 50;
     const tagsInput = document.getElementById('include-tags').value.trim();
     const includeTags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : null;
+    const hideType = document.getElementById('hide-type').checked;
+    const typeFilter = document.getElementById('exercise-type-filter').value;
+    const duration = parseInt(document.getElementById('duration').value) || 0;
 
     try {
         const body = { max_new: maxNew, max_reviews: maxReviews };
         if (includeTags && includeTags.length > 0) {
             body.include_tags = includeTags;
+        }
+        if (hideType) {
+            body.hide_type = true;
+        }
+        if (typeFilter) {
+            body.exercise_types = [typeFilter];
+        }
+        if (duration > 0) {
+            body.max_duration_minutes = duration;
         }
         const res = await fetch('/api/session/start', {
             method: 'POST',
@@ -75,6 +87,8 @@ async function loadNextExercise() {
     document.getElementById('rating-panel').style.display = 'none';
     document.getElementById('controls').style.display = 'flex';
     document.getElementById('my-move-btn').style.display = 'none';
+    document.getElementById('exercise-type').textContent = '';
+    document.getElementById('timer-text').textContent = '';
 
     try {
         const res = await fetch('/api/session/next');
@@ -96,6 +110,22 @@ async function loadNextExercise() {
         document.getElementById('remaining-text').textContent =
             data.remaining + ' remaining';
         document.getElementById('challenge-text').textContent = data.challenge;
+
+        // Show exercise type (if provided by server)
+        const typeEl = document.getElementById('exercise-type');
+        if (data.exercise_type) {
+            typeEl.textContent = data.exercise_type;
+        } else {
+            typeEl.textContent = '';
+        }
+
+        // Show timer for duration-limited sessions
+        const timerEl = document.getElementById('timer-text');
+        if (data.remaining_minutes !== undefined) {
+            timerEl.textContent = Math.round(data.remaining_minutes) + 'm left';
+        } else {
+            timerEl.textContent = '';
+        }
 
         // Display game context if available (own-game exercises)
         const contextEl = document.getElementById('game-context');

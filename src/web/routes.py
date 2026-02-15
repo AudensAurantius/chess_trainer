@@ -187,11 +187,17 @@ async def api_session_start(request: Request):
     max_reviews = body.get("max_reviews")
     include_tags = body.get("include_tags") or None
     adapt_difficulty = body.get("adapt_difficulty")
+    hide_type = body.get("hide_type", False)
+    exercise_types = body.get("exercise_types") or None
+    max_duration = body.get("max_duration_minutes")
     count = manager.start_session(
         max_new=max_new,
         max_reviews=max_reviews,
         include_tags=include_tags,
         adapt_difficulty=adapt_difficulty,
+        hide_exercise_type=bool(hide_type),
+        exercise_types=exercise_types,
+        max_duration_minutes=int(max_duration) if max_duration else None,
     )
     return JSONResponse({"status": "started", "queue_size": count})
 
@@ -226,6 +232,15 @@ async def api_session_next(request: Request):
         "tags": state.exercise.tags[:3],
         "difficulty": state.exercise.difficulty,
     }
+
+    # Include exercise type unless hidden
+    if not manager.hide_exercise_type:
+        response["exercise_type"] = state.exercise.exercise_type.name
+
+    # Include time info for duration-limited sessions
+    if manager.remaining_minutes is not None:
+        response["elapsed_minutes"] = round(manager.elapsed_minutes or 0, 1)
+        response["remaining_minutes"] = round(manager.remaining_minutes, 1)
 
     # Include game context for own-game exercises (if enabled in config)
     config = request.app.state.config

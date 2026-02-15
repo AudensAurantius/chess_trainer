@@ -1,6 +1,7 @@
 """Server-side training session state management."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import chess
@@ -73,6 +74,30 @@ class SessionManager:
         """Cards remaining in the queue."""
         return self._session.remaining if self._session else 0
 
+    @property
+    def hide_exercise_type(self) -> bool:
+        """Whether exercise type labels are hidden."""
+        return getattr(self, "_hide_exercise_type", False)
+
+    @property
+    def elapsed_minutes(self) -> float | None:
+        """Minutes elapsed since session start, or None if no session."""
+        start = getattr(self, "_session_start_time", None)
+        if start is None:
+            return None
+        return (datetime.now() - start).total_seconds() / 60
+
+    @property
+    def remaining_minutes(self) -> float | None:
+        """Minutes remaining in a duration-limited session, or None if unlimited."""
+        limit = getattr(self, "_max_duration_minutes", None)
+        if limit is None:
+            return None
+        elapsed = self.elapsed_minutes
+        if elapsed is None:
+            return None
+        return max(0.0, limit - elapsed)
+
     def _open_repo(self) -> Repository:
         """Open (or reuse) the repository connection."""
         if self._repo is None:
@@ -92,6 +117,9 @@ class SessionManager:
         max_reviews: int | None = None,
         include_tags: list[str] | None = None,
         adapt_difficulty: bool | None = None,
+        hide_exercise_type: bool = False,
+        exercise_types: list[str] | None = None,
+        max_duration_minutes: int | None = None,
     ) -> int:
         """Start a new training session.
 
@@ -100,12 +128,32 @@ class SessionManager:
             max_reviews: Override max reviews (uses config default if None).
             include_tags: Optional list of tags to filter exercises by.
             adapt_difficulty: Override difficulty adaptation (uses config default if None).
+            hide_exercise_type: Whether to hide exercise type labels.
+            exercise_types: Optional list of exercise type names to filter by.
+            max_duration_minutes: Session duration limit in minutes (None = unlimited).
 
         Returns:
             Number of cards in the queue.
         """
+        from ..exercises import ExerciseType
+
         # Close any existing session
         self.end_session()
+
+        self._hide_exercise_type = hide_exercise_type
+        self._session_start_time = datetime.now()
+        self._max_duration_minutes = max_duration_minutes
+
+        # Parse exercise type names to enum values
+        type_filter = None
+        if exercise_types:
+            type_filter = []
+            for name in exercise_types:
+                try:
+                    type_filter.append(ExerciseType[name.upper()])
+                except KeyError:
+                    pass  # Silently skip unknown types
+            type_filter = type_filter or None
 
         repo = self._open_repo()
         session_config = SessionConfig(
@@ -113,6 +161,9 @@ class SessionManager:
             max_reviews=max_reviews or self.config.training.max_reviews,
             interleave_new=self.config.training.interleave_new,
             include_tags=include_tags,
+            exercise_types=type_filter,
+            max_duration_minutes=max_duration_minutes,
+            hide_exercise_type=hide_exercise_type,
         )
 
         # Apply difficulty adaptation if enabled
