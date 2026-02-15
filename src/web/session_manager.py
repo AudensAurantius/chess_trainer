@@ -54,6 +54,8 @@ class SessionManager:
         self._woodpecker_session = None
         self._repo: Repository | None = None
         self._exercise_state: ExerciseState | None = None
+        self._hook_manager = None
+        self._daily_goal_fired = False
 
     @property
     def is_active(self) -> bool:
@@ -111,6 +113,66 @@ class SessionManager:
         if self._repo is not None:
             self._repo.__exit__(None, None, None)
             self._repo = None
+
+    @property
+    def hooks(self):
+        """Lazy-initialized HookManager."""
+        if self._hook_manager is None:
+            from ..hooks import HookManager
+
+            self._hook_manager = HookManager(self.config.hooks)
+        return self._hook_manager
+
+    def _fire_hook(self, event, payload: dict) -> None:
+        """Fire a hook, swallowing all errors to never block training."""
+        try:
+            self.hooks.fire(event, payload)
+        except Exception:  # noqa: BLE001
+            pass  # Hook failures must never block the session
+
+    def _check_daily_goal(self) -> None:
+        """Check if the daily review goal has been met and fire hook once."""
+        goal = self.config.training.daily_review_goal
+        if goal is None or self._daily_goal_fired:
+            return
+
+        from datetime import date
+
+        from ..hooks.events import HookEvent, daily_goal_met_payload
+
+        try:
+            store = self._get_analytics_store()
+            streak_info = store.streaks(lookback_days=1)
+            today = date.today()
+            today_count = 0
+            for day_activity in streak_info.daily_activity:
+                if day_activity.day == today:
+                    today_count = day_activity.review_count
+                    break
+            if today_count >= goal:
+                self._daily_goal_fired = True
+                self._fire_hook(
+                    HookEvent.ON_DAILY_GOAL_MET,
+                    daily_goal_met_payload(reviews_today=today_count, goal=goal),
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _check_streak_milestone(self) -> None:
+        """Check if a streak milestone has been reached and fire hook."""
+        from ..hooks.events import STREAK_MILESTONES, HookEvent, streak_milestone_payload
+
+        try:
+            store = self._get_analytics_store()
+            streak_info = store.streaks(lookback_days=400)
+            current = streak_info.current_streak
+            if current in STREAK_MILESTONES:
+                self._fire_hook(
+                    HookEvent.ON_STREAK_MILESTONE,
+                    streak_milestone_payload(streak_days=current),
+                )
+        except Exception:  # noqa: BLE001
+            pass
 
     @property
     def training_mode(self) -> str:
@@ -365,6 +427,22 @@ class SessionManager:
 
         updated_card = self._session.rate(rating)
 
+        # Fire on_exercise_complete hook
+        if self._exercise_state:
+            from ..hooks.events import HookEvent, exercise_complete_payload
+
+            ex = self._exercise_state.exercise
+            self._fire_hook(
+                HookEvent.ON_EXERCISE_COMPLETE,
+                exercise_complete_payload(
+                    exercise_id=ex.id,
+                    exercise_type=ex.exercise_type.name,
+                    rating=rating_value,
+                    correct=rating >= Rating.GOOD,
+                ),
+            )
+        self._check_daily_goal()
+
         from datetime import datetime
 
         delta = updated_card.due - datetime.now()
@@ -490,8 +568,29 @@ class SessionManager:
         stats = None
         if self._session:
             stats = self._session.end()
+
+            # Fire on_session_end hook
+            from ..hooks.events import HookEvent, session_end_payload
+
+            total = stats.correct + stats.incorrect + stats.partial
+            accuracy = stats.correct / total if total > 0 else 0.0
+            elapsed = self.elapsed_minutes
+            self._fire_hook(
+                HookEvent.ON_SESSION_END,
+                session_end_payload(
+                    total_reviewed=total,
+                    correct=stats.correct,
+                    incorrect=stats.incorrect,
+                    partial=stats.partial,
+                    accuracy=accuracy,
+                    duration_seconds=elapsed * 60 if elapsed else None,
+                ),
+            )
+            self._check_streak_milestone()
+
         self._session = None
         self._exercise_state = None
+        self._daily_goal_fired = False
         self._close_repo()
         return stats
 
@@ -536,6 +635,20 @@ class SessionManager:
     def _import_result(self, result, source: str) -> dict:
         """Build a standard import result dict with card creation."""
         cards_created = self._create_cards_and_tags(source)
+
+        # Fire on_import_complete hook
+        from ..hooks.events import HookEvent, import_complete_payload
+
+        self._fire_hook(
+            HookEvent.ON_IMPORT_COMPLETE,
+            import_complete_payload(
+                source=source,
+                added=result.total_added,
+                skipped=result.total_skipped,
+                errors=len(result.errors),
+            ),
+        )
+
         return {
             "added": result.total_added,
             "skipped": result.total_skipped,
@@ -939,6 +1052,21 @@ class SessionManager:
         ws = self._woodpecker_session
         ws.rate(rating)
 
+        # Fire on_exercise_complete hook for bundle exercises
+        if self._exercise_state:
+            from ..hooks.events import HookEvent, exercise_complete_payload
+
+            ex = self._exercise_state.exercise
+            self._fire_hook(
+                HookEvent.ON_EXERCISE_COMPLETE,
+                exercise_complete_payload(
+                    exercise_id=ex.id,
+                    exercise_type=ex.exercise_type.name,
+                    rating=rating_value,
+                    correct=rating >= Rating.GOOD,
+                ),
+            )
+
         return {
             "remaining": ws.remaining,
             "cycle": ws.progress.current_cycle,
@@ -953,6 +1081,20 @@ class SessionManager:
         cycle_result = ws.end_cycle()
         self._woodpecker_session = None
         self._exercise_state = None
+
+        # Fire on_bundle_cycle_complete hook
+        from ..hooks.events import HookEvent, bundle_cycle_complete_payload
+
+        bundle_id = ws.bundle.id if hasattr(ws, "bundle") else "unknown"
+        self._fire_hook(
+            HookEvent.ON_BUNDLE_CYCLE_COMPLETE,
+            bundle_cycle_complete_payload(
+                bundle_id=bundle_id,
+                cycle_number=cycle_result.cycle_number,
+                accuracy=cycle_result.accuracy,
+                passed=cycle_result.passed,
+            ),
+        )
 
         return {
             "cycle_number": cycle_result.cycle_number,

@@ -57,7 +57,14 @@ def _main_callback(
     """Global options applied before any subcommand."""
     global _app_config  # noqa: PLW0603
     _app_config = load_config(config)
-    configure_logging(_app_config.logging.level)
+    log_cfg = _app_config.logging
+    configure_logging(
+        level=log_cfg.level,
+        file=log_cfg.file,
+        format=log_cfg.format,
+        max_size_mb=log_cfg.max_size_mb,
+        backup_count=log_cfg.backup_count,
+    )
 
 
 def get_repo(db_path: Path | None = None) -> Repository:
@@ -103,6 +110,8 @@ def import_puzzles(
             for error in result.errors[:5]:
                 console.print(f"  - {error}")
 
+        _fire_import_hook("lichess", result.total_added, result.total_skipped, len(result.errors))
+
 
 @app.command("import-chesscom-puzzles")
 def import_chesscom_puzzles(
@@ -138,6 +147,8 @@ def import_chesscom_puzzles(
             console.print("[yellow]Errors:[/yellow]")
             for error in result.errors[:5]:
                 console.print(f"  - {error}")
+
+        _fire_import_hook("chesscom", result.total_added, result.total_skipped, len(result.errors))
 
 
 @app.command("import-failed-puzzles")
@@ -184,6 +195,8 @@ def import_failed_puzzles(
             for error in result.errors[:5]:
                 console.print(f"  - {error}")
 
+        _fire_import_hook("lichess", result.total_added, result.total_skipped, len(result.errors))
+
 
 @app.command()
 def stats(
@@ -222,6 +235,19 @@ def stats(
                 table.add_row(f"  {state}", str(count))
 
             console.print(table)
+
+
+def _fire_import_hook(source: str, added: int, skipped: int, errors: int) -> None:
+    """Fire the on_import_complete hook from CLI import commands."""
+    from ..hooks import HookManager
+    from ..hooks.events import HookEvent, import_complete_payload
+
+    cfg = _get_config()
+    mgr = HookManager(cfg.hooks)
+    mgr.fire(
+        HookEvent.ON_IMPORT_COMPLETE,
+        import_complete_payload(source=source, added=added, skipped=skipped, errors=errors),
+    )
 
 
 def _sync_system_tags(repo: Repository, source: str) -> None:
@@ -2666,6 +2692,10 @@ def import_games(
                 console.print("[yellow]Errors:[/yellow]")
                 for error in result.errors[:5]:
                     console.print(f"  - {error}")
+
+            _fire_import_hook(
+                source_tag, result.total_added, result.total_skipped, len(result.errors)
+            )
     finally:
         if engine_mgr:
             engine_mgr.close()
@@ -3473,6 +3503,122 @@ def auth_deactivate(
         store.deactivate_user(user.id)
         store.delete_user_sessions(user.id)
         console.print(f"[yellow]Deactivated user '{username}' and cleared sessions.[/yellow]")
+
+
+# ── Hooks subcommand group ───────────────────────────────────────────────────
+
+hooks_app = typer.Typer(help="Manage training event hooks")
+app.add_typer(hooks_app, name="hooks")
+
+
+@hooks_app.command("list")
+def hooks_list():
+    """Show all hook events with their installation status."""
+    from ..hooks import HookManager
+
+    cfg = _get_config()
+    mgr = HookManager(cfg.hooks)
+    hooks = mgr.list_hooks()
+
+    table = Table(title="Hook Events")
+    table.add_column("Event", style="cyan")
+    table.add_column("Installed", justify="center")
+    table.add_column("Path")
+
+    for h in hooks:
+        installed = "[green]Yes[/green]" if h["installed"] else "[dim]No[/dim]"
+        table.add_row(h["event"], installed, h["path"])
+    console.print(table)
+
+
+@hooks_app.command("init")
+def hooks_init():
+    """Create hooks directory with example scripts."""
+    from ..hooks import HookManager
+
+    cfg = _get_config()
+    mgr = HookManager(cfg.hooks)
+    path = mgr.init_hooks_dir()
+    console.print(f"[green]\u2713[/green] Hooks directory initialized: {path}")
+    console.print("  Example scripts created for all events.")
+    console.print("  Copy an example, remove the .example suffix, and make it executable.")
+
+
+@hooks_app.command("test")
+def hooks_test(
+    event: str = typer.Argument(help="Event name (e.g. on_exercise_complete)"),
+):
+    """Fire a test event with a sample payload."""
+    from ..hooks import HookEvent, HookManager
+
+    # Validate event name
+    try:
+        hook_event = HookEvent(event)
+    except ValueError:
+        valid = [e.value for e in HookEvent]
+        console.print(f"[red]Unknown event: {event}[/red]")
+        console.print(f"Valid events: {', '.join(valid)}")
+        raise typer.Exit(1)
+
+    # Build sample payload
+    sample_payloads = {
+        HookEvent.ON_EXERCISE_COMPLETE: {
+            "event": "on_exercise_complete",
+            "exercise_id": "test-puzzle-001",
+            "exercise_type": "TACTIC",
+            "rating": 3,
+            "correct": True,
+            "time_ms": 5000,
+        },
+        HookEvent.ON_SESSION_END: {
+            "event": "on_session_end",
+            "total_reviewed": 25,
+            "correct": 20,
+            "incorrect": 3,
+            "partial": 2,
+            "accuracy": 0.8,
+            "duration_seconds": 900.0,
+        },
+        HookEvent.ON_STREAK_MILESTONE: {
+            "event": "on_streak_milestone",
+            "streak_days": 30,
+        },
+        HookEvent.ON_BUNDLE_CYCLE_COMPLETE: {
+            "event": "on_bundle_cycle_complete",
+            "bundle_id": "bundle:test-bundle",
+            "cycle_number": 2,
+            "accuracy": 0.95,
+            "passed": True,
+        },
+        HookEvent.ON_DAILY_GOAL_MET: {
+            "event": "on_daily_goal_met",
+            "reviews_today": 50,
+            "goal": 50,
+        },
+        HookEvent.ON_IMPORT_COMPLETE: {
+            "event": "on_import_complete",
+            "source": "lichess",
+            "added": 10,
+            "skipped": 2,
+            "errors": 0,
+        },
+    }
+
+    cfg = _get_config()
+    mgr = HookManager(cfg.hooks)
+
+    if not mgr.is_installed(hook_event):
+        console.print(f"[yellow]No script installed for {event}[/yellow]")
+        console.print(f"  Expected: {mgr.directory / event}")
+        raise typer.Exit(1)
+
+    payload = sample_payloads[hook_event]
+    success = mgr.fire(hook_event, payload)
+    if success:
+        console.print(f"[green]\u2713[/green] Hook {event} executed successfully")
+    else:
+        console.print(f"[red]\u2717[/red] Hook {event} failed")
+        raise typer.Exit(1)
 
 
 def main():
