@@ -38,9 +38,13 @@ class SessionConfig:
     # FSRS parameters (None = use defaults)
     fsrs_params: FSRSParameters | None = None
 
+    # Duration limit (None = unlimited)
+    max_duration_minutes: int | None = None
+
     # Behavior
     interleave_new: bool = True  # Mix new cards with reviews
     show_answer_immediately: bool = False  # For "reveal" mode
+    hide_exercise_type: bool = False  # Hide type labels during training
 
 
 @dataclass
@@ -213,11 +217,24 @@ class TrainingSession:
         """Get the current review card."""
         return self._current_card
 
+    @property
+    def time_expired(self) -> bool:
+        """Whether the session duration limit has been reached."""
+        if self.config.max_duration_minutes is None:
+            return False
+        elapsed = (datetime.now() - self.stats.started_at).total_seconds() / 60
+        return elapsed >= self.config.max_duration_minutes
+
     def next(self) -> Exercise | None:
         """Get the next exercise to present.
 
-        Returns None when the session is complete.
+        Returns None when the session is complete (queue exhausted or
+        duration limit reached).
         """
+        # Check duration limit
+        if self.time_expired:
+            return None
+
         # Check for cards in learning that are now due
         learning = self.repo.cards.get_learning()
         due_learning = [c for c in learning if c.is_due]

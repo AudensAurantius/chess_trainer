@@ -351,6 +351,39 @@ def _collect_moves(exercise: Exercise) -> tuple[list[chess.Move], int]:
     return moves_played, elapsed
 
 
+_DIFFICULTY_PRESETS: dict[str, tuple[float, float | None]] = {
+    "easy": (0, 1200),
+    "medium": (1200, 1800),
+    "hard": (1800, None),
+}
+
+
+def _parse_duration(s: str) -> int:
+    """Parse a duration string to minutes.
+
+    Accepts: "15m", "1h", "30" (minutes assumed), "1h30m".
+
+    Raises:
+        typer.BadParameter: If the format is unrecognized.
+    """
+    import re
+
+    s = s.strip().lower()
+
+    # Try "XhYm" pattern
+    match = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m?)?", s)
+    if match and (match.group(1) or match.group(2)):
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or 0)
+        return hours * 60 + minutes
+
+    # Try bare number (minutes)
+    if s.isdigit():
+        return int(s)
+
+    raise typer.BadParameter(f"Invalid duration: {s!r}. Use e.g. 15m, 1h, 1h30m, or 30.")
+
+
 @app.command()
 def train(
     new_cards: int = typer.Option(10, "--new", "-n", help="Max new cards"),
@@ -360,6 +393,16 @@ def train(
     exclude_tag: list[str] | None = typer.Option(
         None, "--exclude-tag", help="Exclude by tag (repeatable)"
     ),
+    theme: list[str] | None = typer.Option(
+        None, "--theme", help="Filter by theme/tag (alias for --tag)"
+    ),
+    duration: str | None = typer.Option(
+        None, "--duration", "-d", help="Session duration (e.g. 15m, 1h)"
+    ),
+    difficulty: str | None = typer.Option(
+        None, "--difficulty", help="Difficulty preset: easy, medium, hard"
+    ),
+    hide_type: bool = typer.Option(False, "--hide-type", help="Hide exercise type labels"),
     self_report: bool = typer.Option(
         False, "--self-report", "-s", help="Self-report mode (no move input)"
     ),
@@ -376,14 +419,45 @@ def train(
                 console.print(f"[red]Unknown exercise type: {exercise_type}[/red]")
                 raise typer.Exit(1)
 
+        # Merge --theme into --tag (theme is a pure alias)
+        all_tags = list(include_tag or [])
+        if theme:
+            all_tags.extend(theme)
+
+        # Parse difficulty preset
+        min_diff: float | None = None
+        max_diff: float | None = None
+        if difficulty:
+            key = difficulty.lower()
+            if key not in _DIFFICULTY_PRESETS:
+                console.print(
+                    f"[red]Unknown difficulty: {difficulty}. Use easy, medium, or hard.[/red]"
+                )
+                raise typer.Exit(1)
+            min_diff, max_diff = _DIFFICULTY_PRESETS[key]
+
+        # Parse duration
         cfg = _get_config()
+        duration_minutes: int | None = None
+        if duration:
+            duration_minutes = _parse_duration(duration)
+        elif cfg.training.default_duration_minutes is not None:
+            duration_minutes = cfg.training.default_duration_minutes
+
+        # Determine whether to hide exercise type
+        should_hide_type = hide_type or not cfg.training.show_exercise_type
+
         session_config = SessionConfig(
             max_new_cards=new_cards,
             max_reviews=reviews,
             exercise_types=type_filter,
-            include_tags=include_tag or None,
+            include_tags=all_tags or None,
             exclude_tags=exclude_tag or None,
+            min_difficulty=min_diff,
+            max_difficulty=max_diff,
+            max_duration_minutes=duration_minutes,
             interleave_new=cfg.training.interleave_new,
+            hide_exercise_type=should_hide_type,
         )
 
         session = TrainingSession(repo, session_config)
@@ -395,7 +469,10 @@ def train(
             return
 
         total = session.remaining
-        console.print(f"\n[bold]Training Session[/bold] \u2014 {total} cards")
+        header = f"\n[bold]Training Session[/bold] \u2014 {total} cards"
+        if duration_minutes:
+            header += f" ({duration_minutes}m)"
+        console.print(header)
         if not self_report:
             console.print(
                 "[dim]Type moves in SAN (Nf3) or UCI (g1f3)."
@@ -411,6 +488,13 @@ def train(
             board = exercise.position
             num = session.stats.exercises_shown
             progress = f"Exercise {num}/{total}"
+            if duration_minutes:
+                remaining_min = duration_minutes - session.stats.duration_minutes
+                progress += f" ({max(0, int(remaining_min))}m left)"
+
+            # Build subtitle
+            type_label = "???" if should_hide_type else exercise.exercise_type.name
+            tag_str = ", ".join(exercise.tags[:3]) or "untagged"
 
             # Show the board
             flipped = board.turn == chess.BLACK
@@ -418,10 +502,7 @@ def train(
                 Panel.fit(
                     render_board(board, flipped=flipped),
                     title=progress,
-                    subtitle=(
-                        f"[dim]{exercise.exercise_type.name}"
-                        f" | {', '.join(exercise.tags[:3]) or 'untagged'}[/dim]"
-                    ),
+                    subtitle=f"[dim]{type_label} | {tag_str}[/dim]",
                 )
             )
             console.print(f"[bold]{exercise.get_challenge()}[/bold]")

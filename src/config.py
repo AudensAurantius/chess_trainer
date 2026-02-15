@@ -53,6 +53,8 @@ class TrainingConfig:
     max_new_cards: int = 20
     max_reviews: int = 100
     interleave_new: bool = True
+    show_exercise_type: bool = True
+    default_duration_minutes: int | None = None
 
 
 @dataclass
@@ -238,6 +240,11 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
             config.training.max_reviews = int(tr["max_reviews"])
         if "interleave_new" in tr:
             config.training.interleave_new = bool(tr["interleave_new"])
+        if "show_exercise_type" in tr:
+            config.training.show_exercise_type = bool(tr["show_exercise_type"])
+        if "default_duration_minutes" in tr:
+            val = tr["default_duration_minutes"]
+            config.training.default_duration_minutes = int(val) if val is not None else None
 
     if "logging" in data:
         log = data["logging"]
