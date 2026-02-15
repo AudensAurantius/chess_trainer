@@ -567,6 +567,85 @@ class SessionManager:
         result = importer.import_to(repo.exercises, count=count, include_daily=include_daily)
         return self._import_result(result, "chesscom")
 
+    def import_lichess_study(self, study_url: str, color: str) -> dict:
+        """Import opening lines from a Lichess study, sync exercises.
+
+        Args:
+            study_url: Lichess study URL or 8-char ID.
+            color: Side: "white" or "black".
+
+        Returns:
+            Dict with lines_added, lines_updated, chapters, skipped_chapters,
+            exercises_created counts.
+
+        Raises:
+            ValueError: If color is invalid or study URL cannot be parsed.
+        """
+        from ..lichess.api import get_study_pgn
+        from ..openings.book import (
+            BookError,
+            generate_exercises,
+            import_study_lines,
+            parse_study_id,
+            parse_study_pgn,
+        )
+        from ..openings.models import BookColor
+
+        try:
+            book_color = BookColor(color.lower())
+        except ValueError:
+            raise ValueError(f"Invalid color: {color}. Use 'white' or 'black'.") from None
+
+        try:
+            study_id = parse_study_id(study_url)
+        except BookError as e:
+            raise ValueError(str(e)) from e
+
+        pgn_text = get_study_pgn(study_id)
+        chapters = parse_study_pgn(pgn_text)
+
+        if not chapters:
+            return {
+                "lines_added": 0,
+                "lines_updated": 0,
+                "chapters": 0,
+                "skipped_chapters": 0,
+                "exercises_created": 0,
+            }
+
+        lines = import_study_lines(study_id, chapters, book_color)
+        skipped = sum(1 for ch in chapters if ch.skipped)
+
+        repo = self._open_repo()
+        added = 0
+        updated = 0
+        for line in lines:
+            existing = repo.openings.get_line(line.id)
+            if existing:
+                repo.openings.update_line(line)
+                updated += 1
+            else:
+                repo.openings.add_line(line)
+                added += 1
+
+        # Sync exercises
+        exercises_created = 0
+        for line in lines:
+            for exercise in generate_exercises(line):
+                existing_ex = repo.exercises.get(exercise.id)
+                if not existing_ex:
+                    repo.exercises.add(exercise)
+                    repo.cards.get_or_create(exercise.id)
+                    exercises_created += 1
+
+        return {
+            "lines_added": added,
+            "lines_updated": updated,
+            "chapters": len(chapters),
+            "skipped_chapters": skipped,
+            "exercises_created": exercises_created,
+        }
+
     # ── Bundle session support ─────────────────────────────────────────────
 
     def list_bundles(self) -> list[dict]:

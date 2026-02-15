@@ -750,3 +750,182 @@ class TestChessComImportAPI:
 
         assert res.status_code == 500
         assert "API is down" in res.json()["error"]
+
+
+# ── Lichess Study Import ─────────────────────────────────────────────────────
+
+# Simple study PGN for testing
+STUDY_PGN = """\
+[Event "Test Study"]
+[Site "https://lichess.org/study/abcd1234/ch01"]
+[White "Chapter 1"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+
+[Event "Test Study"]
+[Site "https://lichess.org/study/abcd1234/ch02"]
+[White "Chapter 2"]
+[Result "*"]
+
+1. d4 d5 *
+"""
+
+
+class TestLichessStudyImport:
+    """Tests for SessionManager.import_lichess_study."""
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_import_creates_lines_and_exercises(self, mock_fetch, tmp_path):
+        """Imported study creates lines and exercises."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        mock_fetch.return_value = STUDY_PGN
+
+        result = manager.import_lichess_study(study_url="abcd1234", color="white")
+
+        assert result["lines_added"] == 2
+        assert result["lines_updated"] == 0
+        assert result["chapters"] == 2
+        assert result["skipped_chapters"] == 0
+        assert result["exercises_created"] > 0
+        manager.end_session()
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_re_import_updates_lines(self, mock_fetch, tmp_path):
+        """Re-importing the same study updates existing lines."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        mock_fetch.return_value = STUDY_PGN
+
+        result1 = manager.import_lichess_study(study_url="abcd1234", color="white")
+        assert result1["lines_added"] == 2
+
+        result2 = manager.import_lichess_study(study_url="abcd1234", color="white")
+        assert result2["lines_added"] == 0
+        assert result2["lines_updated"] == 2
+        manager.end_session()
+
+    def test_invalid_color_raises(self, tmp_path):
+        """Invalid color raises ValueError."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        with pytest.raises(ValueError, match="Invalid color"):
+            manager.import_lichess_study(study_url="abcd1234", color="green")
+        manager._close_repo()
+
+    def test_invalid_url_raises(self, tmp_path):
+        """Invalid study URL raises ValueError."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        with pytest.raises(ValueError, match="Cannot extract study ID"):
+            manager.import_lichess_study(study_url="not-valid", color="white")
+        manager._close_repo()
+
+
+class TestLichessStudyImportAPI:
+    """Tests for POST /api/import/lichess-study."""
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_api_returns_result(self, mock_fetch, client):
+        """API returns correct JSON."""
+        mock_fetch.return_value = STUDY_PGN
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"study_url": "abcd1234", "color": "white"},
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["lines_added"] == 2
+        assert data["chapters"] == 2
+
+    def test_api_missing_url_returns_400(self, client):
+        """Missing study_url returns 400."""
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"color": "white"},
+        )
+        assert res.status_code == 400
+        assert "required" in res.json()["error"].lower()
+
+    def test_api_missing_color_returns_400(self, client):
+        """Missing color returns 400."""
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"study_url": "abcd1234"},
+        )
+        assert res.status_code == 400
+        assert "color" in res.json()["error"].lower()
+
+    def test_api_invalid_color_returns_400(self, client):
+        """Invalid color returns 400."""
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"study_url": "abcd1234", "color": "green"},
+        )
+        assert res.status_code == 400
+        assert "color" in res.json()["error"].lower()
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_api_study_not_found_returns_404(self, mock_fetch, client):
+        """Study not found returns 404."""
+        from src.lichess.api import LichessError
+
+        mock_fetch.side_effect = LichessError("Study not found: xyz12345")
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"study_url": "xyz12345", "color": "white"},
+        )
+        assert res.status_code == 404
+        assert "not found" in res.json()["error"].lower()
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_api_network_error_returns_500(self, mock_fetch, client):
+        """Network errors return 500."""
+        from src.lichess.api import LichessError
+
+        mock_fetch.side_effect = LichessError("Failed to fetch study: timeout")
+        res = client.post(
+            "/api/import/lichess-study",
+            json={"study_url": "abcd1234", "color": "white"},
+        )
+        assert res.status_code == 500
+        assert "Failed to fetch" in res.json()["error"]
+
+
+class TestImportPageStudyTab:
+    """Tests for the Lichess Study tab on the import page."""
+
+    def test_import_page_has_study_tab(self, client):
+        """Import page shows Lichess Study tab button."""
+        res = client.get("/import")
+        assert res.status_code == 200
+        assert 'data-tab="lichess-study"' in res.text
+        assert "Lichess Study" in res.text
+
+    def test_import_page_has_study_fields(self, client):
+        """Lichess Study tab has URL and color fields."""
+        res = client.get("/import")
+        assert 'id="study-url"' in res.text
+        assert 'id="study-color"' in res.text
+
+    def test_import_page_has_study_button(self, client):
+        """Lichess Study tab has an import button."""
+        res = client.get("/import")
+        assert "Import Study" in res.text

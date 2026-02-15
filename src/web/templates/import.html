@@ -10,6 +10,7 @@
         <button class="tab-btn" data-tab="failed-puzzles">Failed Puzzles</button>
         <button class="tab-btn" data-tab="chesscom-puzzles">Chess.com</button>
         <button class="tab-btn" data-tab="lichess-games">Lichess Games</button>
+        <button class="tab-btn" data-tab="lichess-study">Lichess Study</button>
     </div>
 
     <!-- Lichess Puzzles -->
@@ -170,6 +171,37 @@
         </div>
     </div>
 
+    <!-- Lichess Study -->
+    <div id="tab-lichess-study" class="tab-content">
+        <div class="panel import-form">
+            <h2>Lichess Study Import</h2>
+            <p class="dim">Import opening lines from a Lichess study into your book.</p>
+
+            <div class="info-box">
+                Each variation path becomes a separate opening line.
+                Chapters with custom starting positions are skipped.
+            </div>
+
+            <div class="import-fields">
+                <div class="form-group">
+                    <label for="study-url">Study URL or ID</label>
+                    <input type="text" id="study-url" placeholder="e.g. https://lichess.org/study/abcd1234">
+                </div>
+                <div class="form-group">
+                    <label for="study-color">Color</label>
+                    <select id="study-color">
+                        <option value="white">White</option>
+                        <option value="black">Black</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="importLichessStudy(this)">
+                Import Study
+            </button>
+        </div>
+    </div>
+
     <div id="import-feedback" class="feedback" style="display: none;"></div>
 </div>
 {% endblock %}
@@ -283,6 +315,54 @@ function importLichessGames(btn) {
     if (rated !== null) body.rated = rated;
 
     doImport(btn, '/api/import/lichess-games', body, 'Analyze Games');
+}
+
+/* Lichess Study */
+function importLichessStudy(btn) {
+    const studyUrl = document.getElementById('study-url').value.trim();
+    if (!studyUrl) {
+        showFeedback({ error: 'Please enter a Lichess study URL or ID.' }, false);
+        return;
+    }
+
+    const color = document.getElementById('study-color').value;
+    const body = { study_url: studyUrl, color };
+    const feedback = document.getElementById('import-feedback');
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+    feedback.style.display = 'none';
+
+    fetch('/api/import/lichess-study', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+        if (!ok) {
+            showFeedback(data, false);
+        } else {
+            let msg = `Imported ${data.lines_added + data.lines_updated} lines`;
+            msg += ` (${data.lines_added} new, ${data.lines_updated} updated)`;
+            msg += ` from ${data.chapters} chapters`;
+            if (data.skipped_chapters > 0) msg += ` (${data.skipped_chapters} skipped)`;
+            msg += '.';
+            if (data.exercises_created > 0) {
+                msg += ` Created ${data.exercises_created} exercises.`;
+                msg += ' <a href="/train" class="feedback-link">Start Training &rarr;</a>';
+            }
+            feedback.innerHTML = msg;
+            feedback.className = 'feedback feedback-correct';
+            feedback.style.display = 'block';
+        }
+    })
+    .catch(error => {
+        showFeedback({ error: 'Import failed: ' + error.message }, false);
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Import Study';
+    });
 }
 </script>
 {% endblock %}
