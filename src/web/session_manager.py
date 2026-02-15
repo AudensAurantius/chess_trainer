@@ -26,6 +26,7 @@ class ExerciseState:
     board: chess.Board = field(default=None, repr=False)
     submitted: bool = False
     used_my_move_hint: bool = False
+    used_notes_hint: bool = False
 
     def __post_init__(self) -> None:
         """Initialize the working board from FEN."""
@@ -111,6 +112,11 @@ class SessionManager:
             self._repo.__exit__(None, None, None)
             self._repo = None
 
+    @property
+    def training_mode(self) -> str:
+        """Current training mode ('study' or 'test')."""
+        return getattr(self, "_training_mode", "study")
+
     def start_session(
         self,
         max_new: int | None = None,
@@ -120,6 +126,7 @@ class SessionManager:
         hide_exercise_type: bool = False,
         exercise_types: list[str] | None = None,
         max_duration_minutes: int | None = None,
+        training_mode: str | None = None,
     ) -> int:
         """Start a new training session.
 
@@ -131,6 +138,7 @@ class SessionManager:
             hide_exercise_type: Whether to hide exercise type labels.
             exercise_types: Optional list of exercise type names to filter by.
             max_duration_minutes: Session duration limit in minutes (None = unlimited).
+            training_mode: 'study' or 'test' (uses config default if None).
 
         Returns:
             Number of cards in the queue.
@@ -143,6 +151,7 @@ class SessionManager:
         self._hide_exercise_type = hide_exercise_type
         self._session_start_time = datetime.now()
         self._max_duration_minutes = max_duration_minutes
+        self._training_mode = training_mode or self.config.training.default_mode
 
         # Parse exercise type names to enum values
         type_filter = None
@@ -307,8 +316,8 @@ class SessionManager:
             user_moves = [solution[i] for i in user_move_indices[:effective_user_moves]]
             result, _ = self._session.submit(user_moves, 0)
 
-            # Apply "show my move" penalty: demote correct → partial
-            if state.used_my_move_hint and result.correct:
+            # Apply hint penalties: demote correct → partial (max one demotion)
+            if result.correct and (state.used_my_move_hint or state.used_notes_hint):
                 self._session.stats.correct -= 1
                 self._session.stats.partial += 1
 
@@ -425,6 +434,56 @@ class SessionManager:
             "from": played_uci[:2],
             "to": played_uci[2:4],
         }
+
+    def get_exercise_notes(self) -> dict:
+        """Get notes for the current exercise.
+
+        In study mode, returns the notes text directly. In test mode,
+        only indicates whether notes exist (must call ``reveal_notes``
+        to view them).
+
+        Returns:
+            Dict with ``has_notes`` and optionally ``notes`` text.
+        """
+        if not self._exercise_state:
+            return {"has_notes": False}
+        notes = self._exercise_state.exercise.notes
+        has = notes is not None and notes != ""
+        result: dict = {"has_notes": has}
+        if has and self.training_mode == "study":
+            result["notes"] = notes
+        return result
+
+    def reveal_notes(self) -> dict:
+        """Reveal notes in test mode, marking the hint as used.
+
+        Returns:
+            Dict with ``notes`` text (or ``None``).
+        """
+        if not self._exercise_state:
+            return {"notes": None}
+        notes = self._exercise_state.exercise.notes
+        if notes is not None and notes != "":
+            self._exercise_state.used_notes_hint = True
+        return {"notes": notes}
+
+    def save_exercise_notes(self, exercise_id: str, notes: str | None) -> bool:
+        """Persist notes to the database and update in-memory state.
+
+        Args:
+            exercise_id: The exercise ID to annotate.
+            notes: Notes text, or ``None`` to clear.
+
+        Returns:
+            True if the exercise was found and updated.
+        """
+        repo = self._open_repo()
+        result = repo.exercises.update_notes(exercise_id, notes)
+        # Also update in-memory exercise if it's the current one
+        if result and self._exercise_state:
+            if self._exercise_state.exercise.id == exercise_id:
+                self._exercise_state.exercise.notes = notes
+        return result
 
     def end_session(self) -> SessionStats | None:
         """End the current session and return stats."""

@@ -538,6 +538,191 @@ class TestShowMyMoveUI:
         assert ".feedback-hint" in res.text
 
 
+class TestSessionManagerNotes:
+    """Tests for notes and training mode in SessionManager."""
+
+    def test_training_mode_defaults_to_study(self, app):
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config)
+        assert mgr.training_mode == "study"
+
+    def test_training_mode_set_on_start(self, app, tmp_path):
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="test")
+        assert mgr.training_mode == "test"
+        mgr.end_session()
+
+    def test_get_notes_no_exercise(self, app):
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config)
+        result = mgr.get_exercise_notes()
+        assert result["has_notes"] is False
+
+    def test_get_notes_study_mode(self, seeded_client, app, tmp_path):
+        """In study mode, notes text is returned directly."""
+        # Seed exercise with notes
+        with Repository(tmp_path / "test.db") as repo:
+            repo.exercises.update_notes("test:001", "study note")
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="study")
+        mgr.next_exercise()
+        result = mgr.get_exercise_notes()
+        assert result["has_notes"] is True
+        assert result["notes"] == "study note"
+        mgr.end_session()
+
+    def test_get_notes_test_mode_hidden(self, app, tmp_path):
+        """In test mode, notes are hidden (has_notes only)."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:n1",
+                fen=SAMPLE_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                themes=[],
+                metadata={"notes": "hidden note"},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="test")
+        mgr.next_exercise()
+        result = mgr.get_exercise_notes()
+        assert result["has_notes"] is True
+        assert "notes" not in result
+        mgr.end_session()
+
+    def test_reveal_notes_sets_hint_flag(self, app, tmp_path):
+        """Revealing notes in test mode marks the hint as used."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:r1",
+                fen=SAMPLE_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                themes=[],
+                metadata={"notes": "revealed note"},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="test")
+        mgr.next_exercise()
+        result = mgr.reveal_notes()
+        assert result["notes"] == "revealed note"
+        assert mgr.exercise_state.used_notes_hint is True
+        mgr.end_session()
+
+    def test_save_notes_persists(self, app, tmp_path):
+        """save_exercise_notes persists to DB and updates in-memory state."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:s1",
+                fen=SAMPLE_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                themes=[],
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session()
+        mgr.next_exercise()
+        assert mgr.save_exercise_notes("test:s1", "New annotation") is True
+        assert mgr.exercise_state.exercise.notes == "New annotation"
+        mgr.end_session()
+
+        # Verify persistence
+        with Repository(tmp_path / "test.db") as repo:
+            loaded = repo.exercises.get("test:s1")
+            assert loaded.notes == "New annotation"
+
+    def test_notes_penalty_correct_move(self, app, tmp_path):
+        """Notes hint demotes correct → partial in stats."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:p1",
+                fen=SAMPLE_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                themes=[],
+                metadata={"notes": "penalty note"},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="test")
+        mgr.next_exercise()
+        mgr.reveal_notes()  # Mark hint as used
+        result = mgr.submit_move("g7g6")
+        assert result["correct"] is True
+        # Stats should show partial, not correct
+        assert mgr.stats.partial == 1
+        assert mgr.stats.correct == 0
+        mgr.end_session()
+
+    def test_no_double_penalty(self, app, tmp_path):
+        """Using both notes hint and my-move hint applies only one demotion."""
+        with Repository(tmp_path / "test.db") as repo:
+            tactic = TacticExercise(
+                id="test:dp1",
+                fen=SAMPLE_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                themes=[],
+                metadata={"notes": "note", "played_move_uci": "g8f6"},
+            )
+            repo.exercises.add(tactic)
+            repo.cards.get_or_create(tactic.id)
+
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config, db_path=tmp_path / "test.db")
+        mgr.start_session(training_mode="test")
+        mgr.next_exercise()
+        mgr.reveal_notes()
+        mgr.get_played_move()
+        assert mgr.exercise_state.used_notes_hint is True
+        assert mgr.exercise_state.used_my_move_hint is True
+        result = mgr.submit_move("g7g6")
+        assert result["correct"] is True
+        # Only one demotion: partial=1, correct=0
+        assert mgr.stats.partial == 1
+        assert mgr.stats.correct == 0
+        mgr.end_session()
+
+    def test_reveal_notes_no_exercise(self, app):
+        from src.web.session_manager import SessionManager
+
+        mgr = SessionManager(app.state.config)
+        result = mgr.reveal_notes()
+        assert result["notes"] is None
+
+
 class TestErrorHandlers:
     def test_404_html_page(self, client):
         res = client.get("/nonexistent-page")
