@@ -356,6 +356,220 @@ class TestHasLichessToken:
         # (even if false, it shouldn't error)
 
 
+class TestLichessGameImport:
+    """Tests for Lichess game analysis import."""
+
+    def test_import_creates_cards_and_tags(self, tmp_path):
+        """Imported game exercises get cards and tags synced."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        exercises = [
+            TacticExercise(
+                id="game:abc123:m10",
+                fen=SAMPLE_FEN,
+                tags=["mistake", "own_game"],
+                source="game_analysis",
+                difficulty=1500.0,
+                solution=["e7e5"],
+                themes=["mistake"],
+            ),
+        ]
+
+        with patch("src.importers.games.GameImporter.fetch") as mock_fetch:
+            mock_fetch.return_value = iter(exercises)
+            result = manager.import_lichess_games(username="testuser", max_games=5)
+
+        assert result["added"] == 1
+        assert result["cards_created"] == 1
+        manager.end_session()
+
+    def test_import_caps_max_games_at_50(self, tmp_path):
+        """max_games is capped at 50."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch("src.importers.games.GameImporter.import_to") as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Game Analysis", total_added=0)
+            with patch.object(manager, "_open_repo") as mock_repo:
+                mock_repo.return_value = MagicMock()
+                mock_repo.return_value.exercises.search.return_value = []
+                manager.import_lichess_games(username="testuser", max_games=200)
+
+            _, kwargs = mock_import.call_args
+            assert kwargs["max_games"] == 50
+        manager._close_repo()
+
+    def test_import_uses_server_evals(self, tmp_path):
+        """Server evals are always enabled for web game import."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch("src.importers.games.GameImporter.import_to") as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Game Analysis", total_added=0)
+            with patch.object(manager, "_open_repo") as mock_repo:
+                mock_repo.return_value = MagicMock()
+                mock_repo.return_value.exercises.search.return_value = []
+                manager.import_lichess_games(username="testuser")
+
+            _, kwargs = mock_import.call_args
+            assert kwargs["use_server_evals"] is True
+        manager._close_repo()
+
+    def test_import_passes_filters(self, tmp_path):
+        """Color, perf_type, rated filters are forwarded."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch("src.importers.games.GameImporter.import_to") as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Game Analysis", total_added=0)
+            with patch.object(manager, "_open_repo") as mock_repo:
+                mock_repo.return_value = MagicMock()
+                mock_repo.return_value.exercises.search.return_value = []
+                manager.import_lichess_games(
+                    username="testuser",
+                    max_games=5,
+                    color="white",
+                    perf_type="rapid",
+                    rated=True,
+                )
+
+            _, kwargs = mock_import.call_args
+            assert kwargs["color"] == "white"
+            assert kwargs["perf_type"] == "rapid"
+            assert kwargs["rated"] is True
+        manager._close_repo()
+
+    def test_import_uses_config_values(self, tmp_path):
+        """GameImporter is constructed with values from config."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        config.game_analysis.min_classification = "BLUNDER"
+        config.own_game_eval.cp_tolerance = 75
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch("src.importers.games.GameImporter.__init__", return_value=None) as mock_init:
+            with patch("src.importers.games.GameImporter.import_to") as mock_import:
+                from src.importers.base import ImportResult
+
+                mock_import.return_value = ImportResult(source="Game Analysis", total_added=0)
+                with patch.object(manager, "_open_repo") as mock_repo:
+                    mock_repo.return_value = MagicMock()
+                    mock_repo.return_value.exercises.search.return_value = []
+                    manager.import_lichess_games(username="testuser")
+
+            from src.analysis.classification import MoveClassification
+
+            _, kwargs = mock_init.call_args
+            assert kwargs["min_classification"] == MoveClassification.BLUNDER
+            assert kwargs["cp_tolerance"] == 75
+        manager._close_repo()
+
+
+class TestLichessGameImportAPI:
+    """Tests for POST /api/import/lichess-games."""
+
+    def test_api_returns_result(self, client):
+        """API returns correct JSON."""
+        exercises = [
+            TacticExercise(
+                id="game:abc:m5",
+                fen=SAMPLE_FEN,
+                tags=["mistake", "own_game"],
+                source="game_analysis",
+                difficulty=1500.0,
+                solution=["e7e5"],
+                themes=["mistake"],
+            ),
+        ]
+        with patch("src.importers.games.GameImporter.fetch") as mock_fetch:
+            mock_fetch.return_value = iter(exercises)
+            res = client.post(
+                "/api/import/lichess-games",
+                json={"username": "testuser", "max_games": 5},
+            )
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["added"] == 1
+
+    def test_api_requires_username(self, client):
+        """Missing username returns 400."""
+        res = client.post("/api/import/lichess-games", json={"max_games": 5})
+        assert res.status_code == 400
+        assert "username" in res.json()["error"].lower()
+
+    def test_api_caps_max_games(self, client):
+        """max_games is capped at 50."""
+        with patch("src.importers.games.GameImporter.fetch") as mock_fetch:
+            mock_fetch.return_value = iter([])
+            res = client.post(
+                "/api/import/lichess-games",
+                json={"username": "testuser", "max_games": 999},
+            )
+
+        assert res.status_code == 200
+
+    def test_api_passes_filters(self, client):
+        """Color, perf_type, rated are forwarded."""
+        with patch("src.importers.games.GameImporter.import_to") as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Game Analysis", total_added=0)
+            res = client.post(
+                "/api/import/lichess-games",
+                json={
+                    "username": "testuser",
+                    "max_games": 5,
+                    "color": "black",
+                    "perf_type": "blitz",
+                    "rated": True,
+                },
+            )
+
+        assert res.status_code == 200
+        _, kwargs = mock_import.call_args
+        assert kwargs["color"] == "black"
+        assert kwargs["perf_type"] == "blitz"
+        assert kwargs["rated"] is True
+
+    def test_api_error_returns_500(self, client):
+        """Import errors return 500."""
+        with patch("src.importers.games.GameImporter.fetch") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("Network error")
+            res = client.post(
+                "/api/import/lichess-games",
+                json={"username": "testuser"},
+            )
+
+        assert res.status_code == 500
+        assert "Network error" in res.json()["error"]
+
+
 class TestChessComImport:
     """Tests for Chess.com puzzle import."""
 

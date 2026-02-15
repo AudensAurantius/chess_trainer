@@ -106,6 +106,35 @@ async def api_import_lichess_failed(request: Request):
     return JSONResponse(result)
 
 
+@router.post("/api/import/lichess-games")
+async def api_import_lichess_games(request: Request):
+    """Import exercises from Lichess game analysis (server evals)."""
+    manager = _manager(request)
+    body = await request.json()
+
+    username = body.get("username", "").strip()
+    if not username:
+        return JSONResponse({"error": "Username is required"}, status_code=400)
+
+    max_games = min(int(body.get("max_games", 10)), 50)
+    color = body.get("color") or None
+    perf_type = body.get("perf_type") or None
+    rated = body.get("rated")
+
+    try:
+        result = manager.import_lichess_games(
+            username=username,
+            max_games=max_games,
+            color=color,
+            perf_type=perf_type,
+            rated=rated,
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
+
+
 @router.post("/api/import/chesscom")
 async def api_import_chesscom(request: Request):
     """Import puzzles from Chess.com."""

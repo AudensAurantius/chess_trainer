@@ -461,6 +461,76 @@ class SessionManager:
 
         return bool(self.config.lichess.token or LICHESS_TOKEN)
 
+    def import_lichess_games(
+        self,
+        username: str,
+        max_games: int = 10,
+        color: str | None = None,
+        perf_type: str | None = None,
+        rated: bool | None = None,
+    ) -> dict:
+        """Import exercises from Lichess game analysis using server evals.
+
+        No local engine required — uses Lichess server-side evaluations.
+
+        Args:
+            username: Lichess username to fetch games for.
+            max_games: Maximum number of games to process (max 50).
+            color: Only analyze games where user played this color.
+            perf_type: Filter by speed (blitz, rapid, classical, etc.).
+            rated: Filter for rated/unrated games.
+
+        Returns:
+            Dict with added, skipped, errors, cards_created counts.
+        """
+        from ..analysis.classification import MoveClassification
+        from ..importers.games import GameImporter
+        from ..storage.tag_store import EntityType, TagSource
+
+        max_games = min(max_games, 50)
+        ga = self.config.game_analysis
+        oge = self.config.own_game_eval
+
+        importer = GameImporter(
+            engine=None,
+            depth=ga.analysis_depth,
+            min_classification=MoveClassification[ga.min_classification.upper()],
+            max_exercises=ga.max_exercises_per_game,
+            skip_first_plies=ga.skip_first_plies,
+            cp_tolerance=oge.cp_tolerance,
+            multipv_count=oge.multipv_count,
+            evaluate_depth=oge.evaluate_depth,
+        )
+
+        repo = self._open_repo()
+        result = importer.import_to(
+            repo.exercises,
+            username=username,
+            use_server_evals=True,
+            max_games=max_games,
+            color=color,
+            perf_type=perf_type,
+            rated=rated,
+        )
+
+        # Create review cards for newly imported exercises
+        cards_created = 0
+        for exercise in repo.exercises.search(source="game_analysis"):
+            card = repo.cards.get_or_create(exercise.id)
+            if card.reps == 0:
+                cards_created += 1
+            if exercise.tags:
+                repo.tags.add_tags(
+                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
+                )
+
+        return {
+            "added": result.total_added,
+            "skipped": result.total_skipped,
+            "errors": len(result.errors),
+            "cards_created": cards_created,
+        }
+
     def import_chesscom_puzzles(
         self,
         count: int = 20,
