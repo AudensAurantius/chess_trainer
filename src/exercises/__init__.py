@@ -15,6 +15,7 @@ from .bundle import (
     WoodpeckerCycle,
 )
 from .endgames import EndgameExercise
+from .factory import ExerciseCreationError, create_exercise
 from .openings import OpeningExercise
 from .positional import PositionalExercise
 from .tactics import TacticExercise
@@ -23,6 +24,7 @@ __all__ = [
     "Exercise",
     "ExerciseResult",
     "ExerciseType",
+    "ExerciseCreationError",
     "TacticExercise",
     "OpeningExercise",
     "EndgameExercise",
@@ -32,4 +34,5 @@ __all__ = [
     "WoodpeckerCycle",
     "BundleProgress",
     "CycleResult",
+    "create_exercise",
 ]
