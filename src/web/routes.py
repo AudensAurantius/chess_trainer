@@ -52,7 +52,15 @@ async def stats_page(request: Request):
 @router.get("/import", response_class=HTMLResponse)
 async def import_page(request: Request):
     """Render the import page."""
-    return _templates(request).TemplateResponse(request, "import.html", {"user": _user(request)})
+    manager = _manager(request)
+    return _templates(request).TemplateResponse(
+        request,
+        "import.html",
+        {
+            "user": _user(request),
+            "has_lichess_token": manager.has_lichess_token(),
+        },
+    )
 
 
 # --- API endpoints ---
@@ -69,6 +77,74 @@ async def api_import_lichess(request: Request):
 
     try:
         result = manager.import_lichess_puzzles(count=count, difficulty=difficulty, themes=themes)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
+
+
+@router.post("/api/import/lichess-failed")
+async def api_import_lichess_failed(request: Request):
+    """Import previously failed Lichess puzzles."""
+    manager = _manager(request)
+    body = await request.json()
+    count = min(int(body.get("count", 50)), 100)
+    since = body.get("since") or None
+    auto_tag = body.get("auto_tag", True)
+
+    try:
+        result = manager.import_lichess_failed_puzzles(count=count, since=since, auto_tag=auto_tag)
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "unauthorized" in error_msg.lower():
+            return JSONResponse(
+                {"error": "Lichess token is missing or invalid. Set LICHESS_TOKEN."},
+                status_code=401,
+            )
+        return JSONResponse({"error": error_msg}, status_code=500)
+
+    return JSONResponse(result)
+
+
+@router.post("/api/import/lichess-games")
+async def api_import_lichess_games(request: Request):
+    """Import exercises from Lichess game analysis (server evals)."""
+    manager = _manager(request)
+    body = await request.json()
+
+    username = body.get("username", "").strip()
+    if not username:
+        return JSONResponse({"error": "Username is required"}, status_code=400)
+
+    max_games = min(int(body.get("max_games", 10)), 50)
+    color = body.get("color") or None
+    perf_type = body.get("perf_type") or None
+    rated = body.get("rated")
+
+    try:
+        result = manager.import_lichess_games(
+            username=username,
+            max_games=max_games,
+            color=color,
+            perf_type=perf_type,
+            rated=rated,
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
+
+
+@router.post("/api/import/chesscom")
+async def api_import_chesscom(request: Request):
+    """Import puzzles from Chess.com."""
+    manager = _manager(request)
+    body = await request.json()
+    count = min(int(body.get("count", 20)), 100)
+    include_daily = body.get("include_daily", True)
+
+    try:
+        result = manager.import_chesscom_puzzles(count=count, include_daily=include_daily)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
