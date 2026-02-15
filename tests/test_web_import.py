@@ -187,6 +187,175 @@ class TestImportAPI:
         assert data["added"] == 0  # no puzzles fetched, but no error
 
 
+class TestFailedPuzzleImport:
+    """Tests for Lichess failed puzzle import."""
+
+    def test_import_creates_cards_and_tags(self, tmp_path):
+        """Imported failed puzzles get cards and tags synced."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        puzzles = [
+            TacticExercise(
+                id="lichess:fail1",
+                fen=SAMPLE_FEN,
+                tags=["failed-puzzle", "needs-review", "fork"],
+                source="lichess",
+                difficulty=1500.0,
+                solution=["e7e5"],
+                themes=["fork"],
+            ),
+        ]
+
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.fetch_failed"
+        ) as mock_fetch:
+            mock_fetch.return_value = iter(puzzles)
+            result = manager.import_lichess_failed_puzzles(count=1)
+
+        assert result["added"] == 1
+        assert result["cards_created"] == 1
+        manager.end_session()
+
+    def test_import_caps_count_at_100(self, tmp_path):
+        """Count is capped at 100."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.import_to_failed"
+        ) as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Lichess Puzzles", total_added=0)
+            with patch.object(manager, "_open_repo") as mock_repo:
+                mock_repo.return_value = MagicMock()
+                mock_repo.return_value.exercises.search.return_value = []
+                manager.import_lichess_failed_puzzles(count=200)
+
+            _, kwargs = mock_import.call_args
+            assert kwargs["count"] == 100
+        manager._close_repo()
+
+    def test_import_passes_since_and_auto_tag(self, tmp_path):
+        """since and auto_tag are forwarded to the importer."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.import_to_failed"
+        ) as mock_import:
+            from src.importers.base import ImportResult
+
+            mock_import.return_value = ImportResult(source="Lichess Puzzles", total_added=0)
+            with patch.object(manager, "_open_repo") as mock_repo:
+                mock_repo.return_value = MagicMock()
+                mock_repo.return_value.exercises.search.return_value = []
+                manager.import_lichess_failed_puzzles(count=10, since="3 months", auto_tag=False)
+
+            _, kwargs = mock_import.call_args
+            assert kwargs["since"] == "3 months"
+            assert kwargs["auto_tag"] is False
+        manager._close_repo()
+
+
+class TestFailedPuzzleImportAPI:
+    """Tests for POST /api/import/lichess-failed."""
+
+    def test_api_returns_result(self, client):
+        """API returns correct JSON."""
+        puzzles = [_make_tactic("fail1")]
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.fetch_failed"
+        ) as mock_fetch:
+            mock_fetch.return_value = iter(puzzles)
+            res = client.post("/api/import/lichess-failed", json={"count": 1})
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["added"] == 1
+
+    def test_api_returns_401_on_auth_error(self, client):
+        """401 errors from Lichess return a clear message."""
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.fetch_failed"
+        ) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("HTTP 401: unauthorized")
+            res = client.post("/api/import/lichess-failed", json={"count": 5})
+
+        assert res.status_code == 401
+        assert "token" in res.json()["error"].lower()
+
+    def test_api_returns_500_on_other_error(self, client):
+        """Non-auth errors return 500."""
+        with patch(
+            "src.importers.lichess_puzzles.LichessPuzzleImporter.fetch_failed"
+        ) as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("Network timeout")
+            res = client.post("/api/import/lichess-failed", json={"count": 5})
+
+        assert res.status_code == 500
+        assert "Network timeout" in res.json()["error"]
+
+
+class TestHasLichessToken:
+    """Tests for token detection."""
+
+    def test_no_token_by_default(self, tmp_path):
+        """No token configured by default."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        with patch("src.lichess.constants.LICHESS_TOKEN", None):
+            assert manager.has_lichess_token() is False
+        manager._close_repo()
+
+    def test_token_from_config(self, tmp_path):
+        """Token from config.lichess.token is detected."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+        config.lichess.token = "lip_test123"
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        assert manager.has_lichess_token() is True
+        manager._close_repo()
+
+    def test_token_from_env(self, tmp_path):
+        """Token from LICHESS_TOKEN env constant is detected."""
+        config = AppConfig()
+        config.database.path = str(tmp_path / "test.db")
+
+        from src.web.session_manager import SessionManager
+
+        manager = SessionManager(config)
+        with patch("src.lichess.constants.LICHESS_TOKEN", "lip_env_token"):
+            assert manager.has_lichess_token() is True
+        manager._close_repo()
+
+    def test_import_page_passes_token_flag(self, client):
+        """GET /import passes has_lichess_token to the template."""
+        res = client.get("/import")
+        assert res.status_code == 200
+        # Template should render — token context is present
+        # (even if false, it shouldn't error)
+
+
 class TestChessComImport:
     """Tests for Chess.com puzzle import."""
 

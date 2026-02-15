@@ -406,6 +406,61 @@ class SessionManager:
             "cards_created": cards_created,
         }
 
+    def import_lichess_failed_puzzles(
+        self,
+        count: int = 50,
+        since: str | None = None,
+        auto_tag: bool = True,
+    ) -> dict:
+        """Import previously failed Lichess puzzles, create cards, and sync tags.
+
+        Requires a Lichess API token with puzzle:read scope.
+
+        Args:
+            count: Number of failed puzzles to fetch (max 100).
+            since: Time horizon string (e.g. "3 months", "30 days").
+            auto_tag: Whether to auto-tag with failed-puzzle/needs-review.
+
+        Returns:
+            Dict with added, skipped, errors, cards_created counts.
+        """
+        from ..importers.lichess_puzzles import LichessPuzzleImporter
+        from ..storage.tag_store import EntityType, TagSource
+
+        count = min(count, 100)
+        repo = self._open_repo()
+        importer = LichessPuzzleImporter()
+        result = importer.import_to_failed(
+            repo.exercises,
+            count=count,
+            since=since,
+            auto_tag=auto_tag,
+        )
+
+        # Create review cards for newly imported exercises
+        cards_created = 0
+        for exercise in repo.exercises.search(source="lichess"):
+            card = repo.cards.get_or_create(exercise.id)
+            if card.reps == 0:
+                cards_created += 1
+            if exercise.tags:
+                repo.tags.add_tags(
+                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
+                )
+
+        return {
+            "added": result.total_added,
+            "skipped": result.total_skipped,
+            "errors": len(result.errors),
+            "cards_created": cards_created,
+        }
+
+    def has_lichess_token(self) -> bool:
+        """Check whether a Lichess API token is configured."""
+        from ..lichess.constants import LICHESS_TOKEN
+
+        return bool(self.config.lichess.token or LICHESS_TOKEN)
+
     def import_chesscom_puzzles(
         self,
         count: int = 20,

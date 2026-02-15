@@ -52,7 +52,15 @@ async def stats_page(request: Request):
 @router.get("/import", response_class=HTMLResponse)
 async def import_page(request: Request):
     """Render the import page."""
-    return _templates(request).TemplateResponse(request, "import.html", {"user": _user(request)})
+    manager = _manager(request)
+    return _templates(request).TemplateResponse(
+        request,
+        "import.html",
+        {
+            "user": _user(request),
+            "has_lichess_token": manager.has_lichess_token(),
+        },
+    )
 
 
 # --- API endpoints ---
@@ -71,6 +79,29 @@ async def api_import_lichess(request: Request):
         result = manager.import_lichess_puzzles(count=count, difficulty=difficulty, themes=themes)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+    return JSONResponse(result)
+
+
+@router.post("/api/import/lichess-failed")
+async def api_import_lichess_failed(request: Request):
+    """Import previously failed Lichess puzzles."""
+    manager = _manager(request)
+    body = await request.json()
+    count = min(int(body.get("count", 50)), 100)
+    since = body.get("since") or None
+    auto_tag = body.get("auto_tag", True)
+
+    try:
+        result = manager.import_lichess_failed_puzzles(count=count, since=since, auto_tag=auto_tag)
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg or "unauthorized" in error_msg.lower():
+            return JSONResponse(
+                {"error": "Lichess token is missing or invalid. Set LICHESS_TOKEN."},
+                status_code=401,
+            )
+        return JSONResponse({"error": error_msg}, status_code=500)
 
     return JSONResponse(result)
 
