@@ -139,6 +139,61 @@ class TestTacticExercise:
         assert ex.exercise_type == ExerciseType.TACTIC
 
 
+class TestExerciseNotes:
+    """Tests for Exercise.notes property backed by metadata."""
+
+    FEN = "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
+
+    def _make_tactic(self, **kwargs):
+        defaults = {
+            "id": "test:notes",
+            "fen": self.FEN,
+            "tags": ["fork"],
+            "source": "test",
+            "solution": ["g7g6"],
+            "themes": ["fork"],
+        }
+        defaults.update(kwargs)
+        return TacticExercise(**defaults)
+
+    def test_notes_default_none(self):
+        ex = self._make_tactic()
+        assert ex.notes is None
+
+    def test_notes_set_and_get(self):
+        ex = self._make_tactic()
+        ex.notes = "Remember: bishop pin on f7"
+        assert ex.notes == "Remember: bishop pin on f7"
+        assert ex.metadata["notes"] == "Remember: bishop pin on f7"
+
+    def test_notes_clear(self):
+        ex = self._make_tactic()
+        ex.notes = "some note"
+        ex.notes = None
+        assert ex.notes is None
+        assert "notes" not in ex.metadata
+
+    def test_notes_roundtrip_via_dict(self):
+        ex = self._make_tactic()
+        ex.notes = "Key pattern: discovered attack"
+        data = ex.to_dict()
+        assert data["metadata"]["notes"] == "Key pattern: discovered attack"
+        restored = TacticExercise.from_dict(data)
+        assert restored.notes == "Key pattern: discovered attack"
+
+    def test_notes_from_metadata_kwarg(self):
+        ex = self._make_tactic(metadata={"notes": "preset note", "other": "val"})
+        assert ex.notes == "preset note"
+        assert ex.metadata["other"] == "val"
+
+    def test_notes_empty_string_stored(self):
+        """Empty string is a valid notes value (not cleared)."""
+        ex = self._make_tactic()
+        ex.notes = ""
+        assert ex.notes == ""
+        assert ex.metadata["notes"] == ""
+
+
 class TestTacticAcceptableFirstMoves:
     """Tests for TacticExercise acceptable_first_moves and evaluate_depth."""
 

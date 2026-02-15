@@ -67,6 +67,19 @@ class Exercise(ABC):
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def notes(self) -> str | None:
+        """Get user-provided notes for this exercise."""
+        return self.metadata.get("notes")
+
+    @notes.setter
+    def notes(self, value: str | None) -> None:
+        """Set or clear user-provided notes."""
+        if value is None:
+            self.metadata.pop("notes", None)
+        else:
+            self.metadata["notes"] = value
+
+    @property
     def position(self) -> chess.Board:
         """Get the chess.Board for this exercise's position."""
         return chess.Board(self.fen)

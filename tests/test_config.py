@@ -886,3 +886,34 @@ class TestOwnGameEvalDefaultConfig:
         assert "# cp_tolerance = 50" in content
         assert "# evaluate_depth = 1" in content
         assert "# show_game_context = true" in content
+
+
+class TestTrainingDefaultMode:
+    """Tests for training.default_mode config field."""
+
+    def test_default_mode_default_value(self):
+        cfg = AppConfig()
+        assert cfg.training.default_mode == "study"
+
+    def test_apply_toml_default_mode(self):
+        cfg = AppConfig()
+        _apply_toml(cfg, {"training": {"default_mode": "test"}})
+        assert cfg.training.default_mode == "test"
+
+    def test_apply_env_training_mode(self, monkeypatch):
+        cfg = AppConfig()
+        monkeypatch.setenv("CHESS_TRAINER_TRAINING_MODE", "TEST")
+        _apply_env(cfg)
+        assert cfg.training.default_mode == "test"
+
+    def test_validation_valid_modes(self):
+        _validate_value("training.default_mode", "study")
+        _validate_value("training.default_mode", "test")
+
+    def test_validation_invalid_mode(self):
+        with pytest.raises(ValueError, match="must be one of"):
+            _validate_value("training.default_mode", "invalid")
+
+    def test_default_config_has_mode_commented(self):
+        content = generate_default_config()
+        assert "default_mode" in content

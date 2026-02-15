@@ -55,6 +55,7 @@ class TrainingConfig:
     interleave_new: bool = True
     show_exercise_type: bool = True
     default_duration_minutes: int | None = None
+    default_mode: str = "study"  # "study" or "test"
 
 
 @dataclass
@@ -245,6 +246,8 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "default_duration_minutes" in tr:
             val = tr["default_duration_minutes"]
             config.training.default_duration_minutes = int(val) if val is not None else None
+        if "default_mode" in tr:
+            config.training.default_mode = tr["default_mode"].lower()
 
     if "logging" in data:
         log = data["logging"]
@@ -391,6 +394,7 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}WEB_PORT": lambda v: setattr(config.web, "port", int(v)),
         f"{ENV_PREFIX}MAX_NEW_CARDS": lambda v: setattr(config.training, "max_new_cards", int(v)),
         f"{ENV_PREFIX}MAX_REVIEWS": lambda v: setattr(config.training, "max_reviews", int(v)),
+        f"{ENV_PREFIX}TRAINING_MODE": lambda v: setattr(config.training, "default_mode", v.lower()),
         f"{ENV_PREFIX}ENGINE_PATH": lambda v: setattr(config.engine, "path", v),
         f"{ENV_PREFIX}ENGINE_HASH_MB": lambda v: setattr(config.engine, "hash_mb", int(v)),
         f"{ENV_PREFIX}ENGINE_THREADS": lambda v: setattr(config.engine, "threads", int(v)),
@@ -561,6 +565,7 @@ maximum_interval = 36500
 max_new_cards = 20
 max_reviews = 100
 interleave_new = true
+# default_mode = "study"  # "study" (notes visible) or "test" (notes hidden, reveal penalty)
 
 [logging]
 level = "INFO"
@@ -742,6 +747,7 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "engine.threads": ("range", 1, 256),
     "training.max_new_cards": ("range", 0, 10000),
     "training.max_reviews": ("range", 0, 10000),
+    "training.default_mode": ("enum", {"study", "test"}),
     "openings.min_games": ("range", 0, 1000000),
     "openings.cache_ttl_hours": ("range", 0, 100000),
     "game_analysis.analysis_depth": ("range", 1, 100),
@@ -836,7 +842,7 @@ def set_config_value(key: str, raw_value: str, config_path: Path | None = None) 
     # Case normalization for enum-like fields
     if key in ("logging.level", "game_analysis.min_classification") and isinstance(value, str):
         value = value.upper()
-    if key == "experimental.vision_backend" and isinstance(value, str):
+    if key in ("experimental.vision_backend", "training.default_mode") and isinstance(value, str):
         value = value.lower()
 
     _validate_value(key, value)
