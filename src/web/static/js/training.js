@@ -7,6 +7,9 @@ let exerciseActive = false;
 let awaitingRating = false;
 let hasPlayedMove = false;
 
+// Resize board on viewport change (orientation, window resize)
+window.addEventListener('resize', () => { if (board) board.resize(); });
+
 // ─── Session control ───────────────────────────────────────────────
 
 async function startSession() {

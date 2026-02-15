@@ -883,4 +883,73 @@ body {
         align-items: center;
         width: 100%;
     }
+
+    /* Layout */
+    .container {
+        padding: 1rem 0.75rem;
+    }
+
+    /* Training page */
+    .training-container,
+    .board-area {
+        max-width: 100%;
+    }
+
+    .start-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .option-group {
+        align-items: stretch;
+    }
+
+    .option-group input,
+    .option-group select {
+        width: 100%;
+        text-align: left;
+    }
+
+    /* Tags and checkbox span full width */
+    .option-group:has(input[type="text"]),
+    .option-group:has(input[type="checkbox"]) {
+        grid-column: 1 / -1;
+    }
+
+    .panel {
+        padding: 1.25rem;
+    }
+
+    .panel h1 {
+        font-size: 1.3rem;
+    }
+
+    .exercise-header {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+
+    .rating-buttons .btn {
+        min-height: 44px;
+        max-width: none;
+    }
+
+    .controls {
+        flex-wrap: wrap;
+    }
+
+    .controls .btn {
+        flex: 1;
+        min-height: 44px;
+        text-align: center;
+    }
+
+    /* General touch targets */
+    .btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
 }
