@@ -56,6 +56,7 @@ class TrainingConfig:
     show_exercise_type: bool = True
     default_duration_minutes: int | None = None
     default_mode: str = "study"  # "study" or "test"
+    daily_review_goal: int | None = None  # Daily review target (fires on_daily_goal_met hook)
 
 
 @dataclass
@@ -176,6 +177,15 @@ class OwnGameEvalConfig:
 
 
 @dataclass
+class HooksConfig:
+    """Training event hooks (git-hooks-style script execution)."""
+
+    enabled: bool = True
+    directory: str = str(DEFAULT_CONFIG_DIR / "hooks")
+    timeout_seconds: int = 10
+
+
+@dataclass
 class AuthConfig:
     """User authentication settings."""
 
@@ -203,6 +213,7 @@ class AppConfig:
     bundles: BundlesConfig = field(default_factory=BundlesConfig)
     import_settings: ImportConfig = field(default_factory=ImportConfig)
     experimental: ExperimentalConfig = field(default_factory=ExperimentalConfig)
+    hooks: HooksConfig = field(default_factory=HooksConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     difficulty: DifficultyConfig = field(default_factory=DifficultyConfig)
     own_game_eval: OwnGameEvalConfig = field(default_factory=OwnGameEvalConfig)
@@ -252,6 +263,9 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
             config.training.default_duration_minutes = int(val) if val is not None else None
         if "default_mode" in tr:
             config.training.default_mode = tr["default_mode"].lower()
+        if "daily_review_goal" in tr:
+            val = tr["daily_review_goal"]
+            config.training.daily_review_goal = int(val) if val is not None else None
 
     if "logging" in data:
         log = data["logging"]
@@ -353,6 +367,15 @@ def _apply_toml(config: AppConfig, data: dict) -> None:
         if "local_model_path" in exp:
             config.experimental.local_model_path = exp["local_model_path"]
 
+    if "hooks" in data:
+        hk = data["hooks"]
+        if "enabled" in hk:
+            config.hooks.enabled = bool(hk["enabled"])
+        if "directory" in hk:
+            config.hooks.directory = str(Path(hk["directory"]).expanduser())
+        if "timeout_seconds" in hk:
+            config.hooks.timeout_seconds = int(hk["timeout_seconds"])
+
     if "auth" in data:
         au = data["auth"]
         if "enabled" in au:
@@ -409,6 +432,14 @@ def _apply_env(config: AppConfig) -> None:
         f"{ENV_PREFIX}MAX_NEW_CARDS": lambda v: setattr(config.training, "max_new_cards", int(v)),
         f"{ENV_PREFIX}MAX_REVIEWS": lambda v: setattr(config.training, "max_reviews", int(v)),
         f"{ENV_PREFIX}TRAINING_MODE": lambda v: setattr(config.training, "default_mode", v.lower()),
+        f"{ENV_PREFIX}DAILY_REVIEW_GOAL": lambda v: setattr(
+            config.training, "daily_review_goal", int(v)
+        ),
+        f"{ENV_PREFIX}HOOKS_ENABLED": lambda v: setattr(
+            config.hooks, "enabled", v.lower() in ("true", "1", "yes")
+        ),
+        f"{ENV_PREFIX}HOOKS_DIRECTORY": lambda v: setattr(config.hooks, "directory", v),
+        f"{ENV_PREFIX}HOOKS_TIMEOUT": lambda v: setattr(config.hooks, "timeout_seconds", int(v)),
         f"{ENV_PREFIX}ENGINE_PATH": lambda v: setattr(config.engine, "path", v),
         f"{ENV_PREFIX}ENGINE_HASH_MB": lambda v: setattr(config.engine, "hash_mb", int(v)),
         f"{ENV_PREFIX}ENGINE_THREADS": lambda v: setattr(config.engine, "threads", int(v)),
@@ -580,6 +611,7 @@ max_new_cards = 20
 max_reviews = 100
 interleave_new = true
 # default_mode = "study"  # "study" (notes visible) or "test" (notes hidden, reveal penalty)
+# daily_review_goal = 50  # Daily review target (fires on_daily_goal_met hook)
 
 [logging]
 level = "INFO"
@@ -622,6 +654,11 @@ default_shuffle = false        # Shuffle exercise order within bundles
 [import_settings]
 failed_puzzle_default_horizon = "3 months"  # Default time horizon for failed puzzle import
 failed_puzzle_auto_tag = true               # Auto-tag imported failed puzzles
+
+# [hooks]
+# enabled = true                        # Enable training event hooks
+# directory = "~/.chess-trainer/hooks"   # Hook scripts directory
+# timeout_seconds = 10                  # Max execution time per hook
 
 # [experimental]
 # enabled = false                  # Master kill-switch for experimental features
@@ -789,6 +826,8 @@ _VALIDATION_RULES: dict[str, tuple] = {
     "difficulty.demote_accuracy": ("range", 0.0, 1.0),
     "difficulty.step": ("range", 1, 1000),
     "difficulty.difficulty_range": ("range", 50, 3000),
+    "training.daily_review_goal": ("range", 1, 10000),
+    "hooks.timeout_seconds": ("range", 1, 300),
     "own_game_eval.cp_tolerance": ("range", 0, 500),
     "own_game_eval.multipv_count": ("range", 1, 10),
     "own_game_eval.evaluate_depth": ("range", 1, 20),
@@ -879,6 +918,7 @@ def set_config_value(key: str, raw_value: str, config_path: Path | None = None) 
         "tablebase.syzygy_path",
         "auth.database_path",
         "logging.file",
+        "hooks.directory",
     ) and isinstance(value, str):
         value = str(Path(value).expanduser())
 
