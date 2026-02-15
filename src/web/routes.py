@@ -86,6 +86,16 @@ async def import_page(request: Request):
     )
 
 
+@router.get("/create", response_class=HTMLResponse)
+async def create_page(request: Request):
+    """Render the custom exercise creation page."""
+    return _templates(request).TemplateResponse(
+        request,
+        "create.html",
+        {"user": _user(request)},
+    )
+
+
 # --- API endpoints ---
 
 
@@ -599,6 +609,79 @@ async def api_bundles_progress(request: Request, slug: str):
         {
             "current_cycle": progress.current_cycle,
             "cycles": [c.to_dict() for c in progress.completed_cycles],
+        }
+    )
+
+
+@router.post("/api/exercise/create")
+async def api_exercise_create(request: Request):
+    """Create a custom exercise from user input."""
+    from ..exercises.factory import ExerciseCreationError, create_exercise
+
+    manager = _manager(request)
+    body = await request.json()
+
+    exercise_type = body.get("type", "").strip()
+    fen = body.get("fen", "").strip()
+    moves = body.get("moves")  # list of UCI strings
+    slug = body.get("id") or None
+    tags_raw = body.get("tags")
+    tags = (
+        [t.strip() for t in tags_raw.split(",") if t.strip()]
+        if isinstance(tags_raw, str)
+        else tags_raw
+    )  # noqa: E501
+    difficulty = body.get("difficulty")
+    notes = body.get("notes") or None
+
+    if difficulty is not None:
+        try:
+            difficulty = float(difficulty)
+        except (ValueError, TypeError):
+            return JSONResponse({"error": "Difficulty must be a number"}, status_code=400)
+
+    if notes and len(notes) > 5000:
+        return JSONResponse({"error": "Notes must be 5000 characters or less"}, status_code=400)
+
+    try:
+        exercise = create_exercise(
+            exercise_type=exercise_type,
+            fen=fen,
+            moves=moves or None,
+            slug=slug,
+            tags=tags,
+            difficulty=difficulty,
+            notes=notes,
+            themes=body.get("themes"),
+            technique=body.get("technique"),
+            target_outcome=body.get("target_outcome"),
+            concept=body.get("concept"),
+            question=body.get("question"),
+            explanation=body.get("explanation"),
+            opening_name=body.get("opening_name"),
+            eco=body.get("eco"),
+            move_index=body.get("move_index"),
+        )
+    except ExerciseCreationError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    repo = manager._open_repo()
+    try:
+        repo.exercises.add(exercise)
+    except Exception as e:
+        if "Duplicate" in str(e) or "UNIQUE" in str(e).upper():
+            return JSONResponse(
+                {"error": f"Exercise ID already exists: {exercise.id}"}, status_code=409
+            )
+        raise
+    repo.cards.get_or_create(exercise.id)
+
+    return JSONResponse(
+        {
+            "status": "created",
+            "id": exercise.id,
+            "type": exercise.exercise_type.name.lower(),
+            "challenge": exercise.get_challenge(),
         }
     )
 

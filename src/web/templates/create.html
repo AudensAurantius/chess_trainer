@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Create Exercise — Chess Trainer{% endblock %}
+
+{% block content %}
+<div class="import-section">
+    <h1>Create Custom Exercise</h1>
+
+    <div class="panel import-form">
+        <div class="import-fields">
+            <div class="form-group">
+                <label for="create-type">Exercise Type</label>
+                <select id="create-type" onchange="updateTypeFields()">
+                    <option value="tactic">Tactic</option>
+                    <option value="endgame">Endgame</option>
+                    <option value="positional">Positional</option>
+                    <option value="opening">Opening</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="create-fen">FEN Position</label>
+                <input type="text" id="create-fen" placeholder="Paste FEN here..."
+                    oninput="previewPosition()">
+            </div>
+
+            <div id="board-preview" style="width: 280px; margin: 0.5rem 0;"></div>
+
+            <div class="form-group">
+                <label for="create-moves" id="moves-label">Solution moves (UCI, space-separated)</label>
+                <input type="text" id="create-moves" placeholder="e.g. e2e4 d7d5 g1f3">
+            </div>
+
+            <!-- Common fields -->
+            <div class="form-group">
+                <label for="create-id">Custom ID slug (optional)</label>
+                <input type="text" id="create-id" placeholder="e.g. my-puzzle-01">
+            </div>
+            <div class="form-group">
+                <label for="create-tags">Tags (comma-separated)</label>
+                <input type="text" id="create-tags" placeholder="e.g. pin, middlegame">
+            </div>
+            <div class="form-group">
+                <label for="create-difficulty">Difficulty (Elo)</label>
+                <input type="number" id="create-difficulty" placeholder="e.g. 1500">
+            </div>
+            <div class="form-group">
+                <label for="create-notes">Notes</label>
+                <textarea id="create-notes" rows="3" maxlength="5000"
+                    placeholder="Study notes for this exercise..."></textarea>
+            </div>
+
+            <!-- Tactic-specific -->
+            <div class="type-fields" id="fields-tactic">
+                <div class="form-group">
+                    <label for="create-themes">Themes (comma-separated)</label>
+                    <input type="text" id="create-themes" placeholder="e.g. fork, pin, discoveredAttack">
+                </div>
+            </div>
+
+            <!-- Endgame-specific -->
+            <div class="type-fields" id="fields-endgame" style="display:none">
+                <div class="form-group">
+                    <label for="create-technique">Technique name</label>
+                    <input type="text" id="create-technique" placeholder="e.g. Lucena Position">
+                </div>
+                <div class="form-group">
+                    <label for="create-outcome">Target outcome</label>
+                    <select id="create-outcome">
+                        <option value="win">Win</option>
+                        <option value="draw">Draw</option>
+                        <option value="hold">Hold</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Positional-specific -->
+            <div class="type-fields" id="fields-positional" style="display:none">
+                <div class="form-group">
+                    <label for="create-concept">Concept</label>
+                    <input type="text" id="create-concept" placeholder="e.g. weak square">
+                </div>
+                <div class="form-group">
+                    <label for="create-question">Question</label>
+                    <input type="text" id="create-question"
+                        placeholder="e.g. What is the best plan?">
+                </div>
+                <div class="form-group">
+                    <label for="create-explanation">Explanation</label>
+                    <textarea id="create-explanation" rows="2"
+                        placeholder="Why these moves are correct..."></textarea>
+                </div>
+            </div>
+
+            <!-- Opening-specific -->
+            <div class="type-fields" id="fields-opening" style="display:none">
+                <div class="form-group">
+                    <label for="create-opening-name">Opening name</label>
+                    <input type="text" id="create-opening-name"
+                        placeholder="e.g. Sicilian Najdorf">
+                </div>
+                <div class="form-group">
+                    <label for="create-eco">ECO code</label>
+                    <input type="text" id="create-eco" placeholder="e.g. B90">
+                </div>
+                <div class="form-group">
+                    <label for="create-move-index">Move index to test</label>
+                    <input type="number" id="create-move-index" value="0" min="0">
+                </div>
+            </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="createExercise(this)">Create Exercise</button>
+    </div>
+
+    <div id="create-feedback" class="feedback" style="display: none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const movesLabels = {
+    tactic: 'Solution moves (UCI, space-separated)',
+    endgame: 'Acceptable first moves (UCI, space-separated)',
+    positional: 'Correct moves (UCI, space-separated)',
+    opening: 'Opening line moves (UCI, space-separated)',
+};
+
+function updateTypeFields() {
+    const type = document.getElementById('create-type').value;
+    document.querySelectorAll('.type-fields').forEach(el => el.style.display = 'none');
+    const fields = document.getElementById('fields-' + type);
+    if (fields) fields.style.display = '';
+    document.getElementById('moves-label').textContent = movesLabels[type] || movesLabels.tactic;
+}
+
+let board = null;
+function previewPosition() {
+    const fen = document.getElementById('create-fen').value.trim();
+    if (!fen) {
+        if (board) board.clear();
+        return;
+    }
+    try {
+        if (board) {
+            board.position(fen);
+        } else {
+            board = Chessboard('board-preview', {
+                position: fen,
+                pieceTheme: '/static/vendor/img/chesspieces/wikipedia/{piece}.png',
+            });
+        }
+    } catch (e) {
+        /* Invalid FEN — ignore until complete */
+    }
+}
+
+async function createExercise(btn) {
+    const feedback = document.getElementById('create-feedback');
+    const type = document.getElementById('create-type').value;
+    const fen = document.getElementById('create-fen').value.trim();
+    const movesRaw = document.getElementById('create-moves').value.trim();
+
+    if (!fen) {
+        feedback.textContent = 'FEN is required.';
+        feedback.className = 'feedback feedback-wrong';
+        feedback.style.display = 'block';
+        return;
+    }
+    if (!movesRaw) {
+        feedback.textContent = 'At least one move is required.';
+        feedback.className = 'feedback feedback-wrong';
+        feedback.style.display = 'block';
+        return;
+    }
+
+    const moves = movesRaw.split(/\s+/).filter(m => m);
+    const body = { type, fen, moves };
+
+    const customId = document.getElementById('create-id').value.trim();
+    if (customId) body.id = customId;
+
+    const tags = document.getElementById('create-tags').value.trim();
+    if (tags) body.tags = tags;
+
+    const difficulty = document.getElementById('create-difficulty').value;
+    if (difficulty) body.difficulty = parseFloat(difficulty);
+
+    const notes = document.getElementById('create-notes').value.trim();
+    if (notes) body.notes = notes;
+
+    /* Type-specific fields */
+    if (type === 'tactic') {
+        const themes = document.getElementById('create-themes').value.trim();
+        if (themes) body.themes = themes.split(',').map(t => t.trim()).filter(t => t);
+    } else if (type === 'endgame') {
+        const technique = document.getElementById('create-technique').value.trim();
+        if (technique) body.technique = technique;
+        body.target_outcome = document.getElementById('create-outcome').value;
+    } else if (type === 'positional') {
+        const concept = document.getElementById('create-concept').value.trim();
+        if (concept) body.concept = concept;
+        const question = document.getElementById('create-question').value.trim();
+        if (question) body.question = question;
+        const explanation = document.getElementById('create-explanation').value.trim();
+        if (explanation) body.explanation = explanation;
+    } else if (type === 'opening') {
+        const name = document.getElementById('create-opening-name').value.trim();
+        if (name) body.opening_name = name;
+        const eco = document.getElementById('create-eco').value.trim();
+        if (eco) body.eco = eco;
+        const moveIndex = parseInt(document.getElementById('create-move-index').value);
+        if (!isNaN(moveIndex)) body.move_index = moveIndex;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    feedback.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/exercise/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            feedback.textContent = data.error || 'Creation failed.';
+            feedback.className = 'feedback feedback-wrong';
+        } else {
+            feedback.innerHTML = `Created ${data.type} exercise: <strong>${data.id}</strong><br>${data.challenge}` +
+                ' <a href="/train" class="feedback-link">Start Training &rarr;</a>';
+            feedback.className = 'feedback feedback-correct';
+            /* Clear form */
+            document.getElementById('create-fen').value = '';
+            document.getElementById('create-moves').value = '';
+            document.getElementById('create-id').value = '';
+            document.getElementById('create-tags').value = '';
+            document.getElementById('create-difficulty').value = '';
+            document.getElementById('create-notes').value = '';
+            if (board) board.clear();
+        }
+    } catch (error) {
+        feedback.textContent = 'Error: ' + error.message;
+        feedback.className = 'feedback feedback-wrong';
+    } finally {
+        feedback.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Create Exercise';
+    }
+}
+</script>
+{% endblock %}
