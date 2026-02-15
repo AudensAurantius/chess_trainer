@@ -952,4 +952,82 @@ body {
         align-items: center;
         justify-content: center;
     }
+
+    /* Import page */
+    .import-section {
+        max-width: 100%;
+    }
+
+    .import-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .import-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-btn {
+        min-height: 44px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    /* Data tables: horizontal scroll */
+    .data-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Stats page */
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+    }
+
+    /* Bundles page */
+    .bundles-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Auth pages */
+    .auth-container {
+        max-width: 100%;
+        margin: 1.5rem auto;
+    }
+
+    /* Action panels */
+    .action-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .action-panel .btn {
+        text-align: center;
+    }
+
+    /* Headings */
+    h1 {
+        font-size: 1.3rem;
+    }
+}
+
+/* ── Tablet (768-959px) ──────────────────────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 959px) {
+    .container {
+        padding: 1.5rem 1rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .bundles-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
