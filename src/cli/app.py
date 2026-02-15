@@ -2162,6 +2162,87 @@ def book_import_pgn(
     console.print(f"[green]\u2713[/green] Imported {added}/{len(games)} lines")
 
 
+@book_app.command("import-study")
+def book_import_study(
+    url_or_id: str = typer.Argument(help="Lichess study URL or 8-char ID"),
+    color: str = typer.Option(..., "--color", help="Side: white or black"),
+    name: str = typer.Option("", "--name", "-n", help="Override opening name"),
+    sync: bool = typer.Option(True, "--sync/--no-sync", help="Auto-sync exercises after import"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Import opening lines from a Lichess study."""
+    from ..lichess.api import LichessError, get_study_pgn
+    from ..openings.book import (
+        BookError,
+        generate_exercises,
+        import_study_lines,
+        parse_study_id,
+        parse_study_pgn,
+    )
+    from ..openings.models import BookColor
+
+    try:
+        book_color = BookColor(color.lower())
+    except ValueError:
+        console.print(f"[red]Invalid color: {color}. Use 'white' or 'black'.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        study_id = parse_study_id(url_or_id)
+    except BookError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    with console.status(f"Fetching study {study_id}..."):
+        try:
+            pgn_text = get_study_pgn(study_id)
+        except LichessError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+
+    chapters = parse_study_pgn(pgn_text)
+    if not chapters:
+        console.print("[yellow]No chapters found in study.[/yellow]")
+        return
+
+    lines = import_study_lines(study_id, chapters, book_color, name=name)
+    if not lines:
+        console.print("[yellow]No lines extracted (all chapters may have custom FEN).[/yellow]")
+        return
+
+    skipped = sum(1 for ch in chapters if ch.skipped)
+
+    with get_repo(db) as repo:
+        added = 0
+        updated = 0
+        for line in lines:
+            existing = repo.openings.get_line(line.id)
+            if existing:
+                repo.openings.update_line(line)
+                updated += 1
+            else:
+                repo.openings.add_line(line)
+                added += 1
+
+        console.print(
+            f"[green]\u2713[/green] Imported {len(lines)} lines "
+            f"({added} new, {updated} updated) "
+            f"from {len(chapters)} chapters" + (f" ({skipped} skipped)" if skipped else "")
+        )
+
+        if sync:
+            # Generate exercises from all book lines and sync
+            exercises_added = 0
+            for line in lines:
+                for exercise in generate_exercises(line):
+                    existing_ex = repo.exercises.get(exercise.id)
+                    if not existing_ex:
+                        repo.exercises.add(exercise)
+                        repo.cards.get_or_create(exercise.id)
+                        exercises_added += 1
+            console.print(f"  Synced {exercises_added} new exercises")
+
+
 @book_app.command("sync")
 def book_sync(
     with_explorer: bool = typer.Option(

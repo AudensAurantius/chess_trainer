@@ -1127,6 +1127,154 @@ class TestBookSyncCommand:
         assert "0 new exercises" in result.output
 
 
+class TestBookImportStudyCommand:
+    @patch("src.lichess.api.get_study_pgn")
+    def test_basic_import(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE
+        result = runner.invoke(
+            app,
+            [
+                "book",
+                "import-study",
+                "abcd1234",
+                "--color",
+                "white",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "2 lines" in result.output
+        assert "2 new" in result.output
+        mock_fetch.assert_called_once_with("abcd1234")
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_url_parsing(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE
+        result = runner.invoke(
+            app,
+            [
+                "book",
+                "import-study",
+                "https://lichess.org/study/abcd1234",
+                "--color",
+                "black",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 0
+        mock_fetch.assert_called_once_with("abcd1234")
+
+    def test_invalid_color(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(
+            app,
+            [
+                "book",
+                "import-study",
+                "abcd1234",
+                "--color",
+                "green",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid color" in result.output
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_fen_skip_counted(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE + "\n" + STUDY_PGN_CUSTOM_FEN
+        result = runner.invoke(
+            app,
+            [
+                "book",
+                "import-study",
+                "abcd1234",
+                "--color",
+                "white",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "skipped" in result.output
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_no_sync_flag(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE
+        result = runner.invoke(
+            app,
+            [
+                "book",
+                "import-study",
+                "abcd1234",
+                "--color",
+                "white",
+                "--no-sync",
+                "--db",
+                str(db_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Synced" not in result.output
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_re_import_updates(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE
+        # First import
+        runner.invoke(
+            app,
+            ["book", "import-study", "abcd1234", "--color", "white", "--db", str(db_path)],
+        )
+        # Second import — should update, not duplicate
+        result = runner.invoke(
+            app,
+            ["book", "import-study", "abcd1234", "--color", "white", "--db", str(db_path)],
+        )
+        assert result.exit_code == 0
+        assert "2 updated" in result.output
+        # Verify no duplicates
+        with Repository(db_path) as repo:
+            lines = repo.openings.list_lines()
+            study_lines = [ln for ln in lines if ln.id.startswith("study:")]
+            assert len(study_lines) == 2
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_api_error(self, mock_fetch, tmp_path):
+        from src.lichess.api import LichessError
+
+        db_path = tmp_path / "test.db"
+        mock_fetch.side_effect = LichessError("Study not found: xyz12345")
+        result = runner.invoke(
+            app,
+            ["book", "import-study", "xyz12345", "--color", "white", "--db", str(db_path)],
+        )
+        assert result.exit_code == 1
+        assert "Study not found" in result.output
+
+    @patch("src.lichess.api.get_study_pgn")
+    def test_sync_creates_exercises(self, mock_fetch, tmp_path):
+        db_path = tmp_path / "test.db"
+        mock_fetch.return_value = STUDY_PGN_SIMPLE
+        result = runner.invoke(
+            app,
+            ["book", "import-study", "abcd1234", "--color", "white", "--db", str(db_path)],
+        )
+        assert result.exit_code == 0
+        assert "Synced" in result.output
+        # Verify exercises were created
+        with Repository(db_path) as repo:
+            exercises = repo.exercises.search(source="book")
+            assert len(exercises) > 0
+
+
 class TestBookImportPgnCommand:
     def test_import_pgn_file(self, tmp_path):
         db_path = tmp_path / "test.db"
