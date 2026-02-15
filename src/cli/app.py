@@ -403,6 +403,9 @@ def train(
         None, "--difficulty", help="Difficulty preset: easy, medium, hard"
     ),
     hide_type: bool = typer.Option(False, "--hide-type", help="Hide exercise type labels"),
+    test_mode: bool = typer.Option(
+        False, "--test-mode", help="Test mode: hide notes during training"
+    ),
     self_report: bool = typer.Option(
         False, "--self-report", "-s", help="Self-report mode (no move input)"
     ),
@@ -506,6 +509,14 @@ def train(
                 )
             )
             console.print(f"[bold]{exercise.get_challenge()}[/bold]")
+
+            # Show notes based on training mode
+            training_mode = "test" if test_mode else cfg.training.default_mode
+            if exercise.notes:
+                if training_mode == "study":
+                    console.print(f"[dim italic]Notes: {exercise.notes}[/dim italic]")
+                else:
+                    console.print("[dim italic]Notes available (hidden in test mode)[/dim italic]")
 
             if self_report:
                 # Self-report mode
@@ -621,6 +632,35 @@ def train(
                 title="Session Complete",
             )
         )
+
+
+@app.command()
+def annotate(
+    exercise_id: str = typer.Argument(help="Exercise ID to annotate"),
+    notes: str | None = typer.Option(None, "--notes", "-n", help="Notes text to set"),
+    clear: bool = typer.Option(False, "--clear", help="Clear existing notes"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Add or edit notes on an exercise."""
+    with get_repo(db) as repo:
+        exercise = repo.exercises.get(exercise_id)
+        if exercise is None:
+            console.print(f"[red]Exercise not found: {exercise_id}[/red]")
+            raise typer.Exit(1)
+
+        if clear:
+            repo.exercises.update_notes(exercise_id, None)
+            console.print(f"[green]\u2713[/green] Notes cleared for {exercise_id}")
+        elif notes is not None:
+            repo.exercises.update_notes(exercise_id, notes)
+            console.print(f"[green]\u2713[/green] Notes saved for {exercise_id}")
+        else:
+            # Show current notes
+            if exercise.notes:
+                console.print(f"[bold]Notes for {exercise_id}:[/bold]")
+                console.print(exercise.notes)
+            else:
+                console.print(f"[dim]No notes for {exercise_id}[/dim]")
 
 
 @app.command()

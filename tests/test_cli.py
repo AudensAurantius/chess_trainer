@@ -371,6 +371,82 @@ class TestInitCardsCommand:
         assert "0" in result.output
 
 
+class TestAnnotateCommand:
+    """Tests for the annotate command."""
+
+    def test_annotate_save_notes(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        from src.storage import Repository
+
+        with Repository(db_path) as repo:
+            ex = TacticExercise(
+                id="test:a1",
+                fen=SCHOLARS_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+            )
+            repo.exercises.add(ex)
+
+        result = runner.invoke(app, ["annotate", "test:a1", "-n", "My note", "--db", str(db_path)])
+        assert result.exit_code == 0
+        assert "Notes saved" in result.output
+
+    def test_annotate_clear_notes(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        from src.storage import Repository
+
+        with Repository(db_path) as repo:
+            ex = TacticExercise(
+                id="test:a2",
+                fen=SCHOLARS_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                metadata={"notes": "old note"},
+            )
+            repo.exercises.add(ex)
+
+        result = runner.invoke(app, ["annotate", "test:a2", "--clear", "--db", str(db_path)])
+        assert result.exit_code == 0
+        assert "Notes cleared" in result.output
+
+    def test_annotate_nonexistent(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(app, ["annotate", "no-such-id", "--db", str(db_path)])
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_annotate_show_existing(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        from src.storage import Repository
+
+        with Repository(db_path) as repo:
+            ex = TacticExercise(
+                id="test:a3",
+                fen=SCHOLARS_FEN,
+                tags=[],
+                source="test",
+                solution=["g7g6"],
+                metadata={"notes": "existing note"},
+            )
+            repo.exercises.add(ex)
+
+        result = runner.invoke(app, ["annotate", "test:a3", "--db", str(db_path)])
+        assert result.exit_code == 0
+        assert "existing note" in result.output
+
+
+class TestTrainTestMode:
+    """Tests for --test-mode flag on train command."""
+
+    def test_train_test_mode_flag_accepted(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        result = runner.invoke(app, ["train", "--test-mode", "--db", str(db_path)])
+        assert result.exit_code == 0
+        assert "No cards due" in result.output
+
+
 class TestConfigCommands:
     """Tests for config subcommands."""
 
