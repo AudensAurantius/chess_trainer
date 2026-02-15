@@ -36,6 +36,9 @@
             <div class="option-group">
                 <label><input type="checkbox" id="hide-type"> Hide exercise type</label>
             </div>
+            <div class="option-group">
+                <label><input type="checkbox" id="test-mode"> Test mode (hide notes)</label>
+            </div>
         </div>
         <button id="start-btn" class="btn btn-primary btn-large" onclick="startSession()">
             Start Training
@@ -60,9 +63,24 @@
         <div id="game-context" class="game-context" style="display: none;"></div>
         <div id="feedback-area" class="feedback" style="display: none;"></div>
 
+        <!-- Notes panel -->
+        <div id="notes-panel" class="notes-panel" style="display: none;">
+            <div class="notes-header" onclick="toggleNotes()">
+                <span class="notes-toggle" id="notes-toggle-icon">&#9654;</span>
+                <span>Notes</span>
+                <button id="reveal-notes-btn" class="btn btn-small btn-hint" onclick="event.stopPropagation(); revealNotes()" style="display: none;">View Notes (penalty)</button>
+            </div>
+            <div id="notes-content" class="notes-content" style="display: none;"></div>
+        </div>
+
         <!-- Rating panel (shown after exercise complete) -->
         <div id="rating-panel" class="rating-panel" style="display: none;">
             <div id="solution-text" class="solution"></div>
+            <!-- Notes editor (post-exercise) -->
+            <div class="notes-editor" id="notes-editor">
+                <textarea id="notes-textarea" class="notes-textarea" placeholder="Add notes for this exercise..." rows="2"></textarea>
+                <button class="btn btn-small btn-secondary" onclick="saveNotes()">Save Notes</button>
+            </div>
             <div class="rating-buttons">
                 <button class="btn btn-again" onclick="rateExercise(1)">Again</button>
                 <button class="btn btn-hard" onclick="rateExercise(2)">Hard</button>

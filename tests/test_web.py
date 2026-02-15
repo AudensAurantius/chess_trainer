@@ -538,6 +538,44 @@ class TestShowMyMoveUI:
         assert ".feedback-hint" in res.text
 
 
+class TestNotesUI:
+    """Tests for notes UI elements in template, JS, and CSS."""
+
+    def test_train_page_has_test_mode_checkbox(self, client):
+        res = client.get("/train")
+        assert 'id="test-mode"' in res.text
+        assert "Test mode" in res.text
+
+    def test_train_page_has_notes_panel(self, client):
+        res = client.get("/train")
+        assert 'id="notes-panel"' in res.text
+        assert 'id="notes-content"' in res.text
+        assert 'id="reveal-notes-btn"' in res.text
+        assert 'id="notes-textarea"' in res.text
+
+    def test_training_js_has_notes_functions(self, client):
+        res = client.get("/static/js/training.js")
+        text = res.text
+        assert "loadNotes" in text
+        assert "revealNotes" in text
+        assert "toggleNotes" in text
+        assert "saveNotes" in text
+        assert "hideNotes" in text
+        assert "currentTrainingMode" in text
+        assert "currentExerciseId" in text
+
+    def test_css_has_notes_styles(self, client):
+        res = client.get("/static/css/style.css")
+        text = res.text
+        assert ".notes-panel" in text
+        assert ".notes-content" in text
+        assert ".notes-header" in text
+        assert ".notes-toggle" in text
+        assert ".notes-editor" in text
+        assert ".notes-textarea" in text
+        assert ".btn-small" in text
+
+
 class TestNotesAPI:
     """Tests for notes API endpoints."""
 

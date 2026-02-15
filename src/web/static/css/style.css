@@ -354,6 +354,74 @@ body {
     color: var(--text-bright);
 }
 
+/* Notes panel */
+.notes-panel {
+    margin: 0.75rem 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.notes-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    user-select: none;
+}
+
+.notes-header:hover {
+    background: var(--bg-hover);
+}
+
+.notes-toggle {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+.notes-content {
+    padding: 0.5rem 0.75rem 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+}
+
+.notes-editor {
+    margin: 0.75rem 0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-start;
+}
+
+.notes-textarea {
+    flex: 1;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    font-family: var(--font-main);
+    resize: vertical;
+    min-height: 2.5rem;
+}
+
+.notes-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.btn-small {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+}
+
 /* Rating panel */
 .rating-panel {
     margin: 1rem 0;
@@ -943,6 +1011,16 @@ body {
         flex: 1;
         min-height: 44px;
         text-align: center;
+    }
+
+    /* Notes */
+    .notes-editor {
+        flex-direction: column;
+    }
+
+    .notes-editor .btn-small {
+        min-height: 44px;
+        width: 100%;
     }
 
     /* General touch targets */

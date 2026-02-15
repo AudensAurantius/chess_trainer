@@ -6,6 +6,9 @@ let playerColor = 'white';
 let exerciseActive = false;
 let awaitingRating = false;
 let hasPlayedMove = false;
+let currentTrainingMode = 'study';
+let currentExerciseId = null;
+let notesExpanded = false;
 
 // Resize board on viewport change (orientation, window resize)
 window.addEventListener('resize', () => { if (board) board.resize(); });
@@ -20,9 +23,13 @@ async function startSession() {
     const hideType = document.getElementById('hide-type').checked;
     const typeFilter = document.getElementById('exercise-type-filter').value;
     const duration = parseInt(document.getElementById('duration').value) || 0;
+    const testMode = document.getElementById('test-mode').checked;
 
     try {
         const body = { max_new: maxNew, max_reviews: maxReviews };
+        if (testMode) {
+            body.training_mode = 'test';
+        }
         if (includeTags && includeTags.length > 0) {
             body.include_tags = includeTags;
         }
@@ -85,8 +92,11 @@ async function loadNextExercise() {
     exerciseActive = false;
     awaitingRating = false;
     hasPlayedMove = false;
+    currentExerciseId = null;
+    notesExpanded = false;
     hideFeedback();
     clearHighlightSquares();
+    hideNotes();
     document.getElementById('rating-panel').style.display = 'none';
     document.getElementById('controls').style.display = 'flex';
     document.getElementById('my-move-btn').style.display = 'none';
@@ -145,6 +155,10 @@ async function loadNextExercise() {
             document.getElementById('my-move-btn').style.display = 'inline-block';
         }
 
+        // Track exercise ID and training mode
+        currentExerciseId = data.exercise_id;
+        currentTrainingMode = data.training_mode || 'study';
+
         // Determine player color from side to move
         playerColor = data.side_to_move === 'White' ? 'white' : 'black';
 
@@ -172,6 +186,11 @@ async function loadNextExercise() {
         }
 
         exerciseActive = true;
+
+        // Load notes
+        if (data.has_notes) {
+            loadNotes();
+        }
     } catch (error) {
         console.error('Error loading exercise:', error);
         showFeedback('Failed to load exercise: ' + error.message, 'error');
@@ -310,6 +329,13 @@ async function showSolutionAndRate() {
             board.position(data.final_fen, true);
         }
 
+        // Populate notes editor with existing notes
+        const textarea = document.getElementById('notes-textarea');
+        if (textarea && currentExerciseId) {
+            const notesContent = document.getElementById('notes-content');
+            textarea.value = (notesContent && notesContent.dataset.notes) || '';
+        }
+
         document.getElementById('rating-panel').style.display = 'block';
         document.getElementById('controls').style.display = 'none';
         awaitingRating = true;
@@ -429,6 +455,104 @@ function highlightSquares(fromSq, toSq) {
 function clearHighlightSquares() {
     const highlighted = document.querySelectorAll('.highlight-played-move');
     highlighted.forEach(el => el.classList.remove('highlight-played-move'));
+}
+
+// ─── Notes ────────────────────────────────────────────────────────
+
+async function loadNotes() {
+    try {
+        const res = await fetch('/api/session/notes');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (!data.has_notes && currentTrainingMode === 'study') return;
+
+        const panel = document.getElementById('notes-panel');
+        const content = document.getElementById('notes-content');
+        const revealBtn = document.getElementById('reveal-notes-btn');
+
+        panel.style.display = 'block';
+
+        if (data.notes !== undefined) {
+            // Study mode: show notes directly
+            content.textContent = data.notes;
+            content.dataset.notes = data.notes;
+            content.style.display = 'block';
+            notesExpanded = true;
+            document.getElementById('notes-toggle-icon').innerHTML = '&#9660;';
+            revealBtn.style.display = 'none';
+        } else {
+            // Test mode: show reveal button
+            content.style.display = 'none';
+            revealBtn.style.display = 'inline-block';
+        }
+    } catch (error) {
+        console.error('Error loading notes:', error);
+    }
+}
+
+async function revealNotes() {
+    try {
+        const res = await fetch('/api/session/reveal-notes', { method: 'POST' });
+        if (!res.ok) return;
+        const data = await res.json();
+
+        const content = document.getElementById('notes-content');
+        const revealBtn = document.getElementById('reveal-notes-btn');
+
+        if (data.notes) {
+            content.textContent = data.notes;
+            content.dataset.notes = data.notes;
+            content.style.display = 'block';
+            notesExpanded = true;
+            document.getElementById('notes-toggle-icon').innerHTML = '&#9660;';
+            revealBtn.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error revealing notes:', error);
+    }
+}
+
+function toggleNotes() {
+    const content = document.getElementById('notes-content');
+    const icon = document.getElementById('notes-toggle-icon');
+    if (content.style.display === 'none' && content.textContent) {
+        content.style.display = 'block';
+        icon.innerHTML = '&#9660;';
+        notesExpanded = true;
+    } else {
+        content.style.display = 'none';
+        icon.innerHTML = '&#9654;';
+        notesExpanded = false;
+    }
+}
+
+function hideNotes() {
+    document.getElementById('notes-panel').style.display = 'none';
+    document.getElementById('notes-content').style.display = 'none';
+    document.getElementById('notes-content').textContent = '';
+    document.getElementById('notes-content').dataset.notes = '';
+    document.getElementById('reveal-notes-btn').style.display = 'none';
+    document.getElementById('notes-toggle-icon').innerHTML = '&#9654;';
+}
+
+async function saveNotes() {
+    if (!currentExerciseId) return;
+    const textarea = document.getElementById('notes-textarea');
+    const notes = textarea.value.trim();
+
+    try {
+        const res = await fetch('/api/exercise/' + encodeURIComponent(currentExerciseId) + '/notes', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notes: notes || '' }),
+        });
+        if (res.ok) {
+            showFeedback(notes ? 'Notes saved.' : 'Notes cleared.', 'info');
+        }
+    } catch (error) {
+        console.error('Error saving notes:', error);
+    }
 }
 
 // ─── UI helpers ────────────────────────────────────────────────────
