@@ -358,6 +358,42 @@ class SessionManager:
 
     # ── Import support ──────────────────────────────────────────────────────
 
+    def _create_cards_and_tags(self, source: str) -> int:
+        """Create review cards and sync tags for exercises from a source.
+
+        Iterates all exercises matching the given source, ensures each has a
+        review card, and syncs any tags from the exercise to the tag store.
+
+        Args:
+            source: Exercise source name to filter by.
+
+        Returns:
+            Number of new cards created (cards with reps == 0).
+        """
+        from ..storage.tag_store import EntityType, TagSource
+
+        repo = self._open_repo()
+        cards_created = 0
+        for exercise in repo.exercises.search(source=source):
+            card = repo.cards.get_or_create(exercise.id)
+            if card.reps == 0:
+                cards_created += 1
+            if exercise.tags:
+                repo.tags.add_tags(
+                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
+                )
+        return cards_created
+
+    def _import_result(self, result, source: str) -> dict:
+        """Build a standard import result dict with card creation."""
+        cards_created = self._create_cards_and_tags(source)
+        return {
+            "added": result.total_added,
+            "skipped": result.total_skipped,
+            "errors": len(result.errors),
+            "cards_created": cards_created,
+        }
+
     def import_lichess_puzzles(
         self,
         count: int = 20,
@@ -372,39 +408,17 @@ class SessionManager:
             themes: Optional list of tactical themes.
 
         Returns:
-            Dict with added, skipped, errors counts.
+            Dict with added, skipped, errors, cards_created counts.
         """
         from ..importers.lichess_puzzles import LichessPuzzleImporter
-        from ..storage.tag_store import EntityType, TagSource
 
         count = min(count, 100)
         repo = self._open_repo()
         importer = LichessPuzzleImporter()
         result = importer.import_to(
-            repo.exercises,
-            count=count,
-            difficulty=difficulty,
-            themes=themes,
+            repo.exercises, count=count, difficulty=difficulty, themes=themes
         )
-
-        # Create review cards for newly imported exercises
-        cards_created = 0
-        for exercise in repo.exercises.search(source="lichess"):
-            card = repo.cards.get_or_create(exercise.id)
-            if card.reps == 0:
-                cards_created += 1
-            # Sync tags from the exercise
-            if exercise.tags:
-                repo.tags.add_tags(
-                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
-                )
-
-        return {
-            "added": result.total_added,
-            "skipped": result.total_skipped,
-            "errors": len(result.errors),
-            "cards_created": cards_created,
-        }
+        return self._import_result(result, "lichess")
 
     def import_lichess_failed_puzzles(
         self,
@@ -425,35 +439,14 @@ class SessionManager:
             Dict with added, skipped, errors, cards_created counts.
         """
         from ..importers.lichess_puzzles import LichessPuzzleImporter
-        from ..storage.tag_store import EntityType, TagSource
 
         count = min(count, 100)
         repo = self._open_repo()
         importer = LichessPuzzleImporter()
         result = importer.import_to_failed(
-            repo.exercises,
-            count=count,
-            since=since,
-            auto_tag=auto_tag,
+            repo.exercises, count=count, since=since, auto_tag=auto_tag
         )
-
-        # Create review cards for newly imported exercises
-        cards_created = 0
-        for exercise in repo.exercises.search(source="lichess"):
-            card = repo.cards.get_or_create(exercise.id)
-            if card.reps == 0:
-                cards_created += 1
-            if exercise.tags:
-                repo.tags.add_tags(
-                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
-                )
-
-        return {
-            "added": result.total_added,
-            "skipped": result.total_skipped,
-            "errors": len(result.errors),
-            "cards_created": cards_created,
-        }
+        return self._import_result(result, "lichess")
 
     def has_lichess_token(self) -> bool:
         """Check whether a Lichess API token is configured."""
@@ -485,7 +478,6 @@ class SessionManager:
         """
         from ..analysis.classification import MoveClassification
         from ..importers.games import GameImporter
-        from ..storage.tag_store import EntityType, TagSource
 
         max_games = min(max_games, 50)
         ga = self.config.game_analysis
@@ -512,24 +504,7 @@ class SessionManager:
             perf_type=perf_type,
             rated=rated,
         )
-
-        # Create review cards for newly imported exercises
-        cards_created = 0
-        for exercise in repo.exercises.search(source="game_analysis"):
-            card = repo.cards.get_or_create(exercise.id)
-            if card.reps == 0:
-                cards_created += 1
-            if exercise.tags:
-                repo.tags.add_tags(
-                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
-                )
-
-        return {
-            "added": result.total_added,
-            "skipped": result.total_skipped,
-            "errors": len(result.errors),
-            "cards_created": cards_created,
-        }
+        return self._import_result(result, "game_analysis")
 
     def import_chesscom_puzzles(
         self,
@@ -546,34 +521,12 @@ class SessionManager:
             Dict with added, skipped, errors, cards_created counts.
         """
         from ..importers.chesscom_puzzles import ChessComPuzzleImporter
-        from ..storage.tag_store import EntityType, TagSource
 
         count = min(count, 100)
         repo = self._open_repo()
         importer = ChessComPuzzleImporter()
-        result = importer.import_to(
-            repo.exercises,
-            count=count,
-            include_daily=include_daily,
-        )
-
-        # Create review cards for newly imported exercises
-        cards_created = 0
-        for exercise in repo.exercises.search(source="chesscom"):
-            card = repo.cards.get_or_create(exercise.id)
-            if card.reps == 0:
-                cards_created += 1
-            if exercise.tags:
-                repo.tags.add_tags(
-                    EntityType.EXERCISE, exercise.id, exercise.tags, TagSource.SYSTEM
-                )
-
-        return {
-            "added": result.total_added,
-            "skipped": result.total_skipped,
-            "errors": len(result.errors),
-            "cards_created": cards_created,
-        }
+        result = importer.import_to(repo.exercises, count=count, include_daily=include_daily)
+        return self._import_result(result, "chesscom")
 
     # ── Bundle session support ─────────────────────────────────────────────
 
