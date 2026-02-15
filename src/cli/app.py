@@ -664,6 +664,74 @@ def annotate(
 
 
 @app.command()
+def create(
+    fen: str = typer.Option(..., "--fen", "-f", help="Position as FEN string"),
+    exercise_type: str = typer.Option(
+        ..., "--type", "-t", help="tactic/opening/endgame/positional"
+    ),
+    moves: str = typer.Option(..., "--moves", "-m", help="Solution moves in UCI (space-separated)"),
+    tags: str | None = typer.Option(None, "--tags", help="Comma-separated tags"),
+    difficulty: float | None = typer.Option(None, "--difficulty", "-d", help="Elo-like difficulty"),
+    notes: str | None = typer.Option(None, "--notes", "-n", help="Study notes"),
+    exercise_id: str | None = typer.Option(None, "--id", help="Custom slug for the ID"),
+    themes: str | None = typer.Option(None, "--themes", help="Tactic themes (comma-separated)"),
+    technique: str | None = typer.Option(None, "--technique", help="Endgame technique name"),
+    target_outcome: str | None = typer.Option(None, "--outcome", help="Endgame: win/draw/hold"),
+    concept: str | None = typer.Option(None, "--concept", help="Positional concept"),
+    question: str | None = typer.Option(None, "--question", help="Positional question"),
+    explanation: str | None = typer.Option(None, "--explanation", help="Positional explanation"),
+    opening_name: str | None = typer.Option(None, "--opening-name", help="Opening name"),
+    eco: str | None = typer.Option(None, "--eco", help="ECO code"),
+    move_index: int | None = typer.Option(None, "--move-index", help="Opening move index to test"),
+    db: Path | None = typer.Option(None, "--db", help="Database path"),
+):
+    """Create a custom exercise from a FEN position."""
+    from ..exercises.factory import ExerciseCreationError, create_exercise
+
+    move_list = moves.strip().split()
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+    theme_list = [t.strip() for t in themes.split(",") if t.strip()] if themes else None
+
+    try:
+        exercise = create_exercise(
+            exercise_type=exercise_type,
+            fen=fen,
+            moves=move_list,
+            slug=exercise_id,
+            tags=tag_list,
+            difficulty=difficulty,
+            notes=notes,
+            themes=theme_list,
+            technique=technique,
+            target_outcome=target_outcome,
+            concept=concept,
+            question=question,
+            explanation=explanation,
+            opening_name=opening_name,
+            eco=eco,
+            move_index=move_index,
+        )
+    except ExerciseCreationError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1) from e
+
+    with get_repo(db) as repo:
+        try:
+            repo.exercises.add(exercise)
+        except Exception as e:
+            if "Duplicate" in str(e) or "UNIQUE" in str(e).upper():
+                console.print(f"[red]Exercise ID already exists: {exercise.id}[/red]")
+                raise typer.Exit(1) from e
+            raise
+        repo.cards.get_or_create(exercise.id)
+
+    console.print(
+        f"[green]\u2713[/green] Created {exercise.exercise_type.name} exercise: {exercise.id}"
+    )
+    console.print(f"  Challenge: {exercise.get_challenge()}")
+
+
+@app.command()
 def init_cards(
     db: Path | None = typer.Option(None, "--db", help="Database path"),
 ):
