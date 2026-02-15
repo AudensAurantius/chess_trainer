@@ -94,6 +94,77 @@ class TestExerciseStore:
         assert results[0].id == "test:high"
 
 
+class TestUpdateMetadata:
+    """Tests for ExerciseStore.update_metadata and update_notes."""
+
+    def _make_tactic(self, id_="test:meta", metadata=None):
+        return TacticExercise(
+            id=id_,
+            fen="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+            tags=["fork"],
+            source="test",
+            difficulty=1500.0,
+            created_at=datetime(2025, 1, 1),
+            solution=["e7e5"],
+            themes=["fork"],
+            metadata=metadata or {},
+        )
+
+    def test_update_metadata_merge(self, repo):
+        ex = self._make_tactic(metadata={"existing": "value"})
+        repo.exercises.add(ex)
+        result = repo.exercises.update_metadata("test:meta", {"notes": "hello"})
+        assert result is True
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.metadata["existing"] == "value"
+        assert loaded.metadata["notes"] == "hello"
+
+    def test_update_metadata_empty_initial(self, repo):
+        ex = self._make_tactic()
+        repo.exercises.add(ex)
+        repo.exercises.update_metadata("test:meta", {"key": "val"})
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.metadata["key"] == "val"
+
+    def test_update_metadata_remove_key(self, repo):
+        ex = self._make_tactic(metadata={"notes": "old", "keep": "yes"})
+        repo.exercises.add(ex)
+        repo.exercises.update_metadata("test:meta", {"notes": None})
+        loaded = repo.exercises.get("test:meta")
+        assert "notes" not in loaded.metadata
+        assert loaded.metadata["keep"] == "yes"
+
+    def test_update_metadata_nonexistent(self, repo):
+        result = repo.exercises.update_metadata("no-such-id", {"notes": "hello"})
+        assert result is False
+
+    def test_update_notes_set(self, repo):
+        ex = self._make_tactic()
+        repo.exercises.add(ex)
+        repo.exercises.update_notes("test:meta", "My annotation")
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.notes == "My annotation"
+
+    def test_update_notes_clear(self, repo):
+        ex = self._make_tactic(metadata={"notes": "old note"})
+        repo.exercises.add(ex)
+        repo.exercises.update_notes("test:meta", None)
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.notes is None
+
+    def test_update_notes_roundtrip(self, repo):
+        """Add exercise, set notes, retrieve, check property."""
+        ex = self._make_tactic()
+        repo.exercises.add(ex)
+        repo.exercises.update_notes("test:meta", "Pattern: back rank mate")
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.notes == "Pattern: back rank mate"
+        # Update again
+        repo.exercises.update_notes("test:meta", "Updated note")
+        loaded = repo.exercises.get("test:meta")
+        assert loaded.notes == "Updated note"
+
+
 class TestCardStore:
     """Tests for CardStore CRUD and queries."""
 

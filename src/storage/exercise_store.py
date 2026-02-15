@@ -195,6 +195,48 @@ class ExerciseStore:
         ).fetchone()
         return result is not None
 
+    def update_metadata(self, exercise_id: str, updates: dict) -> bool:
+        """Atomically merge updates into an exercise's metadata JSON.
+
+        Args:
+            exercise_id: The exercise ID to update.
+            updates: Dict of keys to merge. Use ``None`` values to remove keys.
+
+        Returns:
+            True if the exercise was found and updated.
+        """
+        # Read current metadata
+        row = self.conn.execute(
+            "SELECT metadata FROM exercises WHERE id = ?", [exercise_id]
+        ).fetchone()
+        if row is None:
+            return False
+
+        current = json.loads(row[0]) if isinstance(row[0], str) else (row[0] or {})
+        for key, value in updates.items():
+            if value is None:
+                current.pop(key, None)
+            else:
+                current[key] = value
+
+        self.conn.execute(
+            "UPDATE exercises SET metadata = ? WHERE id = ?",
+            [json.dumps(current), exercise_id],
+        )
+        return True
+
+    def update_notes(self, exercise_id: str, notes: str | None) -> bool:
+        """Set or clear notes on an exercise.
+
+        Args:
+            exercise_id: The exercise ID.
+            notes: Notes text, or ``None`` to clear.
+
+        Returns:
+            True if the exercise was found and updated.
+        """
+        return self.update_metadata(exercise_id, {"notes": notes})
+
     def iterate_all(self) -> Iterator[Exercise]:
         """Iterate over all exercises (memory efficient for large datasets)."""
         cursor = self.conn.execute(
